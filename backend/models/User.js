@@ -92,7 +92,7 @@ const workerProfileSchema = new mongoose.Schema({
     // Availability & Radius
     isOnline: { type: Boolean, default: false },
     lastActiveAt: { type: Date, default: null },
-    serviceRadiusKm: { type: Number, default: 10 },
+    serviceRadiusKm: { type: Number, default: 15 },
     availabilitySchedule: {
         days: { type: [Number], default: [] },
         startTime: { type: String, default: '09:00' },

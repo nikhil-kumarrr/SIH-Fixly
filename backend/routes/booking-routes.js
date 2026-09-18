@@ -16,6 +16,8 @@ import {
     workerCancelBooking,
     createEmergencyBooking,
     validateCoupon,
+    applyCouponToBooking,
+    removeCouponFromBooking,
 } from '../controllers/bookingController.js';
 import {
     verifyArrivalOtp,
@@ -41,6 +43,8 @@ router.get('/worker/active', protect, listWorkerActive);
 router.get('/worker/completed', protect, listWorkerCompleted);
 router.post('/estimate', protect, calculateEstimate);
 router.post('/validate-coupon', protect, validateCoupon);
+router.post('/:bookingId/apply-coupon', protect, applyCouponToBooking);
+router.post('/:bookingId/remove-coupon', protect, removeCouponFromBooking);
 router.post('/emergency', protect, createEmergencyBooking);
 router.post('/', protect, upload.array('photos', 5), createBooking);
 router.get('/:bookingId/review', protect, getBookingReview);

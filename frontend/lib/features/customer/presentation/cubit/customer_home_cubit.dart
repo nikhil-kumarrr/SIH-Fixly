@@ -25,14 +25,12 @@ class CustomerHomeCubit extends Cubit<CustomerHomeState> {
             status: CustomerHomeStatus.loaded,
             categories: bundle.categories,
             popularServices: bundle.topServices,
-            banners: bundle.banners.isNotEmpty
-                ? bundle.banners
-                : HomeApiRepository.defaultBanners,
+            banners: bundle.banners,
           ),
         );
       } on ApiException {
         final categories = await _home.fetchCategories();
-        List<CouponBanner> banners = HomeApiRepository.defaultBanners;
+        List<CouponBanner> banners = const [];
         try {
           banners = await _home.fetchBanners();
         } catch (_) {}
@@ -48,7 +46,7 @@ class CustomerHomeCubit extends Cubit<CustomerHomeState> {
     } catch (_) {
       emit(state.copyWith(
         status: CustomerHomeStatus.error,
-        banners: HomeApiRepository.defaultBanners,
+        banners: const [],
       ));
     }
   }

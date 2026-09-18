@@ -14,6 +14,16 @@ import { uploadToCloudinary } from '../utils/cloudinary.js';
 import { sendEmail as sendEmailHelper } from '../utils/sendEmail.js';
 import redis from '../config/redis.js';
 import Cooperative from '../models/Cooperative.js';
+import {
+    invalidateHomeCache,
+    invalidateServiceCache,
+    syncServiceToRedis,
+    syncWorkerToRedis,
+    syncCustomerToRedis,
+    syncSettingsToRedis,
+    syncBannerToRedis,
+    deleteKeysByPattern
+} from '../utils/homeCache.js';
 
 // Helper function for building pagination object
 const getPaginationMetaData = (total, page, limit) => {
@@ -292,46 +302,37 @@ export const getDashboardStats = async (req, res) => {
             { $limit: 5 }
         ]);
 
-        const categoryMetaMap = {
-            'plumbing': { name: 'Plumbing', icon: 'wrench', color: '#1e40af', bg: '#eff6ff', defaultPct: 25 },
-            'electrical': { name: 'Electrical', icon: 'zap', color: '#ca8a04', bg: '#fefce8', defaultPct: 20 },
-            'cleaning': { name: 'Cleaning', icon: 'sparkles', color: '#16a34a', bg: '#f0fdf4', defaultPct: 15 },
-            'carpentry': { name: 'Carpentry', icon: 'hammer', color: '#ea580c', bg: '#fff7ed', defaultPct: 15 },
-            'others': { name: 'Others', icon: 'folder', color: '#0d9488', bg: '#f0fdf4', defaultPct: 25 }
+        const formatTitleCase = (str = '') => {
+            if (!str) return '';
+            return str
+                .replace(/[_-]+/g, ' ')
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean)
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ');
         };
 
         let topServices = categoryAggregate.map(ts => {
-            const catName = ts._id || 'Others';
-            const catKey = catName.toLowerCase().includes('plumb') ? 'plumbing'
-                : catName.toLowerCase().includes('electr') ? 'electrical'
-                : catName.toLowerCase().includes('clean') ? 'cleaning'
-                : catName.toLowerCase().includes('carpent') ? 'carpentry'
-                : 'others';
-
-            const meta = categoryMetaMap[catKey] || categoryMetaMap['others'];
-            const pct = Math.round((ts.totalBookings / totalBookingsCount) * 100);
+            const rawName = (ts._id || 'Others').toString().trim();
+            const formattedName = formatTitleCase(rawName);
+            const pct = totalBookingsCount > 0 ? Math.round((ts.totalBookings / totalBookingsCount) * 100) : 0;
 
             return {
-                id: meta.name.toLowerCase(),
-                name: meta.name,
+                id: rawName.toLowerCase(),
+                name: formattedName,
                 count: ts.totalBookings,
                 percentage: pct,
-                icon: meta.icon,
-                color: meta.color,
-                bg: meta.bg
+                icon: 'layers',
+                color: '#1e7e45',
+                bg: '#f0fdf4'
             };
         });
 
         if (topServices.length === 0) {
-            topServices = Object.values(categoryMetaMap).map(meta => ({
-                id: meta.name.toLowerCase(),
-                name: meta.name,
-                count: 10,
-                percentage: meta.defaultPct,
-                icon: meta.icon,
-                color: meta.color,
-                bg: meta.bg
-            }));
+            topServices = [
+                { id: 'general', name: 'General Services', count: 0, percentage: 100, icon: 'layers', color: '#1e7e45', bg: '#f0fdf4' }
+            ];
         }
 
         return res.status(200).json({
@@ -454,6 +455,15 @@ export const toggleCustomerStatus = async (req, res) => {
 
         if (!customer) {
             return res.status(404).json({ success: false, message: 'Customer not found' });
+        }
+
+        // Instantly synchronize with Redis cache
+        await syncCustomerToRedis(customer._id, customer);
+
+        // Broadcast real-time update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('user:status_changed', { userId: customer._id, isVerified: customer.isVerified });
         }
 
         return res.status(200).json({
@@ -581,6 +591,7 @@ export const getWorkerById = async (req, res) => {
         return res.status(200).json({
             success: true,
             worker,
+            data: worker,
             stats: {
                 totalJobs: bookings.length,
                 completedJobs,
@@ -611,6 +622,10 @@ export const updateWorkerStatus = async (req, res) => {
 
         const oldStatus = worker.kycDocuments?.status || 'NOT_STARTED';
 
+        if (!worker.workerProfile) {
+            worker.workerProfile = {};
+        }
+
         if (isVerified !== undefined) worker.isVerified = isVerified;
         if (badges) worker.workerProfile.badges = badges;
         if (category) worker.workerProfile.category = category;
@@ -630,19 +645,38 @@ export const updateWorkerStatus = async (req, res) => {
         await worker.save();
 
         if (kycStatus && kycStatus !== oldStatus) {
-            const VerificationAuditLog = (await import('../models/VerificationAuditLog.js')).default;
-            await VerificationAuditLog.create({
-                workerId: worker._id,
-                action: kycStatus === 'approved' ? 'MANUAL_APPROVED' : 'MANUAL_REJECTED',
-                actorType: 'ADMIN',
-                actorId: req.user.id,
-                oldStatus,
-                newStatus: kycStatus,
-                reason: declineReason || 'Admin action'
-            });
+            try {
+                const VerificationAuditLog = (await import('../models/VerificationAuditLog.js')).default;
+                const actorId = req.user?._id || req.user?.id || req.admin?.id || 'admin';
+                await VerificationAuditLog.create({
+                    workerId: worker._id,
+                    action: kycStatus === 'approved' ? 'MANUAL_APPROVED' : 'MANUAL_REJECTED',
+                    actorType: 'ADMIN',
+                    actorId: actorId,
+                    oldStatus,
+                    newStatus: kycStatus,
+                    reason: declineReason || 'Admin action'
+                });
+            } catch (auditErr) {
+                console.error('[Admin] Verification audit log creation error:', auditErr.message);
+            }
         }
 
         const updatedWorker = await User.findById(worker._id).select('-password');
+
+        // Instantly synchronize worker profile & cache in Redis
+        await syncWorkerToRedis(worker._id, updatedWorker);
+
+        // Broadcast real-time verification and profile updates to client apps
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('worker:verification_updated', {
+                workerId: worker._id,
+                isVerified: updatedWorker.isVerified,
+                kycStatus: updatedWorker.kycDocuments?.status
+            });
+            io.emit('worker:updated', { worker: updatedWorker });
+        }
 
         return res.status(200).json({
             success: true,
@@ -661,7 +695,7 @@ export const updateWorkerStatus = async (req, res) => {
  */
 export const addWorker = async (req, res) => {
     try {
-        const { name, email, phone, password, category, rate, experienceYears, bio, skills } = req.body;
+        const { name, email, phone, password, category, rate, experienceYears, bio, skills, state, district, city, address } = req.body;
         const rateVal = Number(rate) || 50;
 
         if (!name || !email || !password) {
@@ -686,14 +720,34 @@ export const addWorker = async (req, res) => {
                 experienceYears: Number(experienceYears) || 1,
                 bio: bio || '',
                 skills: Array.isArray(skills) ? skills : (skills ? skills.split(',') : []),
+                state: state || null,
+                district: district || null,
                 badges: ['Verified Worker']
-            }
+            },
+            ...(address || city || district || state ? {
+                savedAddresses: [{
+                    addressLine: address || '',
+                    city: city || district || '',
+                    state: state || '',
+                    isDefault: true,
+                }]
+            } : {})
         });
 
         await newWorker.save();
 
         const workerResponse = newWorker.toObject();
         delete workerResponse.password;
+
+        // Instantly synchronize worker cache to Redis
+        await syncWorkerToRedis(newWorker._id, workerResponse);
+
+        // Broadcast real-time event
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('worker:created', { worker: workerResponse });
+            io.emit('worker:updated', { worker: workerResponse });
+        }
 
         return res.status(201).json({
             success: true,
@@ -749,18 +803,30 @@ export const updateWorkerById = async (req, res) => {
             identityProofPhoto,
             identityFrontPhoto,
             identityBackPhoto,
-            identityDocuments
+            identityDocuments,
+            serviceRadiusKm,
+            hourlyRate
         } = req.body;
 
         const updateFields = {};
+        if (!worker.workerProfile) {
+            await User.updateOne({ _id: worker._id }, { $set: { workerProfile: {} } });
+        }
         if (name !== undefined) updateFields.name = name;
         if (email !== undefined && email !== worker.email) updateFields.email = email;
         if (phone !== undefined) updateFields.phone = phone;
         if (isVerified !== undefined) updateFields.isVerified = Boolean(isVerified);
 
         if (category !== undefined) updateFields['workerProfile.category'] = category;
-        if (rate !== undefined) {
-            updateFields['workerProfile.rate'] = Number(rate);
+        const finalRate = rate !== undefined ? Number(rate) : (hourlyRate !== undefined ? Number(hourlyRate) : undefined);
+        if (finalRate !== undefined) {
+            updateFields['workerProfile.rate'] = finalRate;
+            updateFields['workerProfile.hourlyRate'] = finalRate;
+            updateFields['workerProfile.minimumCharge'] = finalRate;
+            updateFields['workerProfile.rateFormatted'] = `₹${finalRate}`;
+        }
+        if (serviceRadiusKm !== undefined) {
+            updateFields['workerProfile.serviceRadiusKm'] = Number(serviceRadiusKm);
         }
         if (experienceYears !== undefined) updateFields['workerProfile.experienceYears'] = Number(experienceYears);
         if (bio !== undefined) updateFields['workerProfile.bio'] = bio;
@@ -777,12 +843,40 @@ export const updateWorkerById = async (req, res) => {
         if (identityFrontPhoto !== undefined) updateFields['workerProfile.identityFrontPhoto'] = identityFrontPhoto;
         if (identityBackPhoto !== undefined) updateFields['workerProfile.identityBackPhoto'] = identityBackPhoto;
         if (identityDocuments !== undefined) updateFields['workerProfile.identityDocuments'] = identityDocuments;
+        if (req.body.state !== undefined) updateFields['workerProfile.state'] = req.body.state;
+        if (req.body.district !== undefined) updateFields['workerProfile.district'] = req.body.district;
+
+        // Support full KYC Documents fields
+        if (req.body.aadhaarNumber !== undefined) updateFields['kycDocuments.aadhaarNumber'] = req.body.aadhaarNumber;
+        if (req.body.aadhaarFrontPhoto !== undefined) updateFields['kycDocuments.aadhaarFrontPhoto'] = req.body.aadhaarFrontPhoto;
+        if (req.body.aadhaarBackPhoto !== undefined) updateFields['kycDocuments.aadhaarBackPhoto'] = req.body.aadhaarBackPhoto;
+        if (req.body.panNumber !== undefined) updateFields['kycDocuments.panNumber'] = req.body.panNumber;
+        if (req.body.panFrontPhoto !== undefined) updateFields['kycDocuments.panFrontPhoto'] = req.body.panFrontPhoto;
+        if (req.body.panBackPhoto !== undefined) updateFields['kycDocuments.panBackPhoto'] = req.body.panBackPhoto;
+        if (req.body.selfieImageUrl !== undefined) updateFields['kycDocuments.selfieImageUrl'] = req.body.selfieImageUrl;
+        if (req.body.certificateUrl !== undefined) updateFields['kycDocuments.certificateUrl'] = req.body.certificateUrl;
+        if (req.body.kycStatus !== undefined) updateFields['kycDocuments.status'] = req.body.kycStatus;
+        if (req.body.declineReason !== undefined) updateFields['kycDocuments.declineReason'] = req.body.declineReason;
 
         const updatedWorker = await User.findByIdAndUpdate(
             worker._id,
             { $set: updateFields },
             { returnDocument: 'after', runValidators: false }
         ).select('-password');
+
+        // Instantly synchronize worker profile & cache in Redis
+        await syncWorkerToRedis(worker._id, updatedWorker);
+
+        // Broadcast real-time update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('worker:updated', { worker: updatedWorker });
+            io.emit('worker:verification_updated', {
+                workerId: worker._id,
+                isVerified: updatedWorker.isVerified,
+                kycStatus: updatedWorker.kycDocuments?.status
+            });
+        }
 
         return res.status(200).json({
             success: true,
@@ -915,6 +1009,22 @@ export const assignWorkerToBooking = async (req, res) => {
             .populate('worker', 'name email phone')
             .populate('service', 'title');
 
+        // Instantly invalidate worker cache and refresh metrics in Redis
+        await syncWorkerToRedis(workerId);
+
+        // Broadcast real-time socket events
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`booking_${bookingId}`).emit('booking_status_update', {
+                bookingId,
+                status: booking.status,
+                workerId,
+                worker: { _id: worker._id, name: worker.name, phone: worker.phone }
+            });
+            io.emit('booking:assigned', { bookingId, workerId, booking: updatedBooking });
+            io.emit('booking:updated', { bookingId, booking: updatedBooking });
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Worker assigned successfully',
@@ -957,6 +1067,22 @@ export const updateBookingStatus = async (req, res) => {
         }
 
         await booking.save();
+
+        // Invalidate worker cache to update active jobs / availability
+        if (booking.worker) {
+            await syncWorkerToRedis(booking.worker);
+        }
+
+        // Broadcast real-time status update
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`booking_${bookingId}`).emit('booking_status_update', {
+                bookingId,
+                status: booking.status,
+                scheduledTime: booking.scheduledTime
+            });
+            io.emit('booking:updated', { bookingId, status: booking.status, scheduledTime: booking.scheduledTime });
+        }
 
         return res.status(200).json({
             success: true,
@@ -1003,8 +1129,9 @@ export const getServices = async (req, res) => {
         }
 
         const total = await Service.countDocuments(query);
+        const sortOption = req.query.sort === 'desc' ? { createdAt: -1, _id: -1 } : { createdAt: 1, _id: 1 };
         const services = await Service.find(query)
-            .sort({ createdAt: -1 })
+            .sort(sortOption)
             .skip((page - 1) * limit)
             .limit(limit);
 
@@ -1078,8 +1205,10 @@ export const createCategory = async (req, res) => {
             }
         }
 
-        const finalCategory = (categoryName || serviceTitle).toLowerCase();
-        const finalTitle = serviceTitle || categoryName;
+        const finalCategory = (categoryName || category || serviceTitle || '').toString().toLowerCase().trim();
+
+        const rawTitle = serviceTitle || categoryName || title || name || '';
+        const finalTitle = rawTitle.toString().toLowerCase().trim();
         const finalPrice = Number(basePrice || price || 0);
 
         const newService = await Service.create({
@@ -1092,47 +1221,15 @@ export const createCategory = async (req, res) => {
             isActive: isActive !== undefined ? (isActive === 'true' || isActive === true) : true
         });
 
-        // Instant Redis Push: Pushes category to Redis cache so frontend immediately reflects it from Redis without hitting DB
-        const cacheKey = 'app:services:categories';
-        try {
-            const cachedData = await redis.get(cacheKey);
-            let groupedCategories = {};
-            let remainingTtl = parseInt(process.env.CACHE_TTL_CATEGORIES, 10) || 86400;
+        // Direct Redis Push: Synchronize categories & services directly to Redis cache
+        await syncServiceToRedis(newService);
 
-            if (cachedData) {
-                groupedCategories = JSON.parse(cachedData);
-                const ttl = await redis.ttl(cacheKey);
-                if (ttl > 0) remainingTtl = ttl;
-            } else {
-                // If Redis has no cache yet, fetch all active services from DB so complete cache is built
-                const allServices = await Service.find({ isActive: true }).lean();
-                groupedCategories = allServices.reduce((acc, s) => {
-                    acc[s.category] = acc[s.category] || [];
-                    acc[s.category].push(s);
-                    return acc;
-                }, {});
-            }
-
-            if (!groupedCategories[finalCategory]) {
-                groupedCategories[finalCategory] = [];
-            }
-
-            const serviceObj = newService.toObject ? newService.toObject() : newService;
-            const alreadyExists = groupedCategories[finalCategory].some(s => String(s._id) === String(serviceObj._id));
-            if (!alreadyExists) {
-                groupedCategories[finalCategory].push(serviceObj);
-            }
-
-            // Save updated cache to Redis
-            await redis.set(cacheKey, JSON.stringify(groupedCategories), 'EX', remainingTtl);
-        } catch (redisErr) {
-            console.error('Redis cache push error in admin createCategory:', redisErr.message);
+        // Realtime Socket Broadcast to all clients (mobile app, web, admin)
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('category:created', { category: finalCategory, service: newService });
+            io.emit('services:updated', { action: 'created', service: newService });
         }
-
-        // Invalidate home dashboard cache
-        try {
-            await redis.del('app:home:dashboard');
-        } catch (_) {}
 
         return res.status(201).json({
             success: true,
@@ -1154,25 +1251,40 @@ export const createService = createCategory;
  */
 export const updateService = async (req, res) => {
     try {
+        const updateData = { ...req.body };
+        if (updateData.category) {
+            updateData.category = String(updateData.category).toLowerCase().trim();
+        }
+        if (updateData.title) {
+            updateData.title = String(updateData.title).toLowerCase().trim();
+        }
+        if (updateData.name) {
+            updateData.name = String(updateData.name).toLowerCase().trim();
+        }
+
         const service = await Service.findByIdAndUpdate(
             req.params.id,
-            { $set: req.body },
-            { new: true, runValidators: true }
+            { $set: updateData },
+            { new: true, returnDocument: 'after', runValidators: true }
         );
+
 
         if (!service) {
             return res.status(404).json({ success: false, message: 'Service not found' });
         }
 
-        // Clear Redis cache so changes reflect instantly
-        try {
-            await redis.del('app:services:categories');
-            await redis.del('app:home:dashboard');
-        } catch (_) {}
+        // Direct Redis Push: Synchronize updated service directly to Redis
+        await syncServiceToRedis(service);
+
+        // Realtime Socket Broadcast
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('services:updated', { action: 'updated', service });
+        }
 
         return res.status(200).json({
             success: true,
-            message: 'Service updated successfully',
+            message: 'Service updated successfully and pushed to Redis',
             service
         });
     } catch (error) {
@@ -1192,18 +1304,43 @@ export const deleteService = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Service not found' });
         }
 
-        // Clear Redis cache so changes reflect instantly
-        try {
-            await redis.del('app:services:categories');
-            await redis.del('app:home:dashboard');
-        } catch (_) {}
+        // Direct Redis Push: Synchronize remaining services to Redis
+        await syncServiceToRedis();
+
+        // Realtime Socket Broadcast
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('services:updated', { action: 'deleted', serviceId: req.params.id });
+        }
 
         return res.status(200).json({
             success: true,
-            message: 'Service deleted successfully'
+            message: 'Service deleted successfully and Redis cache synchronized'
         });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc Manually Purge & Resync Services & Categories Redis Cache
+ * @route POST /api/admin/services/sync-cache
+ * @access Private (Admin)
+ */
+export const syncServicesCacheAdmin = async (req, res) => {
+    try {
+        await syncServiceToRedis();
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('services:updated', { action: 'cache_cleared' });
+            io.emit('categories:updated', { action: 'cache_cleared' });
+        }
+        return res.status(200).json({
+            success: true,
+            message: 'Redis cache successfully synchronized and pre-warmed for all services and categories!'
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
     }
 };
 
@@ -1406,6 +1543,11 @@ export const deleteReview = async (req, res) => {
         const review = await Review.findByIdAndDelete(req.params.id);
         if (!review) {
             return res.status(404).json({ success: false, message: 'Review not found' });
+        }
+
+        // Recompute worker score and sync to Redis
+        if (review.worker) {
+            await syncWorkerToRedis(review.worker);
         }
 
         return res.status(200).json({
@@ -1832,7 +1974,35 @@ export const getSettings = async (req, res) => {
 export const updateSettings = async (req, res) => {
     try {
         const settings = await Settings.findOneAndUpdate({}, { $set: req.body }, { new: true, upsert: true });
-        await clearSettingsCache();
+        
+        // If service or search radius is modified, cascade to all workers and purge cache
+        const newRadius = Number(req.body.workerSearchRadiusKm || req.body.serviceRadiusKm);
+        if (newRadius && !isNaN(newRadius)) {
+            // First ensure any worker without a workerProfile object gets initialized
+            await User.updateMany(
+                { role: 'worker', $or: [{ workerProfile: null }, { workerProfile: { $exists: false } }] },
+                { $set: { workerProfile: { serviceRadiusKm: newRadius } } }
+            );
+            // Update service radius across all workers
+            await User.updateMany(
+                { role: 'worker' },
+                { $set: { 'workerProfile.serviceRadiusKm': newRadius } }
+            );
+            await deleteKeysByPattern('worker:profile:*');
+        }
+
+        // Instantly synchronize & pre-warm settings in Redis
+        await syncSettingsToRedis(settings);
+
+        // Broadcast real-time settings update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('settings:updated', { settings });
+            if (newRadius) {
+                io.emit('worker:radius_updated', { radiusKm: newRadius });
+            }
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Platform settings, customer fees, and worker commission rates updated successfully!',
@@ -1879,7 +2049,16 @@ export const updateEnabledLanguages = async (req, res) => {
         }
         settings.enabledLanguages = languages;
         await settings.save();
-        await clearSettingsCache();
+
+        // Instantly synchronize & pre-warm settings in Redis
+        await syncSettingsToRedis(settings);
+
+        // Broadcast real-time update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('settings:updated', { settings });
+        }
+
         return res.status(200).json({ success: true, data: settings.enabledLanguages, message: 'Languages updated' });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });

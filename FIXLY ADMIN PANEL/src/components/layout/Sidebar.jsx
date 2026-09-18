@@ -88,30 +88,15 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.45)',
-            zIndex: 40,
-            backdropFilter: 'blur(2px)',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: 55,
+            backdropFilter: 'blur(3px)',
+            transition: 'opacity 0.2s ease',
           }}
         />
       )}
 
-      <aside
-        style={{
-          width: '260px',
-          height: '100vh',
-          position: 'sticky',
-          top: 0,
-          backgroundColor: 'var(--bg-sidebar)',
-          borderRight: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '20px 14px 18px 16px',
-          zIndex: 45,
-          transition: 'transform 0.3s ease',
-          flexShrink: 0,
-          overflowY: 'auto',
-        }}
-      >
+      <aside className={`admin-sidebar ${isOpen ? 'sidebar-open' : ''}`}>
         {/* Top Header & Logo */}
         <div>
           <div

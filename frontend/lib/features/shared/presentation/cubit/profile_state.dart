@@ -23,6 +23,7 @@ class ProfileState extends Equatable {
     this.emergencyContactName = '',
     this.emergencyContactPhone = '',
     this.emergencyContactRelation = '',
+    this.homeState = '',
     this.homeCity = '',
     this.homePincode = '',
     this.errorMessage,
@@ -47,11 +48,23 @@ class ProfileState extends Equatable {
   final String emergencyContactName;
   final String emergencyContactPhone;
   final String emergencyContactRelation;
+  final String homeState;
   final String homeCity;
   final String homePincode;
   final String? errorMessage;
 
   bool get isWorker => role == UserRole.worker;
+
+  /// City/district · state for profile cards.
+  String get locationSummary {
+    final parts = <String>[
+      if (homeCity.trim().isNotEmpty) homeCity.trim(),
+      if (homeState.trim().isNotEmpty) homeState.trim(),
+    ];
+    if (parts.isNotEmpty) return parts.join(', ');
+    if (workAddress.trim().isNotEmpty) return workAddress.trim();
+    return '';
+  }
 
   ProfileState copyWith({
     ProfileStatus? status,
@@ -73,6 +86,7 @@ class ProfileState extends Equatable {
     String? emergencyContactName,
     String? emergencyContactPhone,
     String? emergencyContactRelation,
+    String? homeState,
     String? homeCity,
     String? homePincode,
     String? errorMessage,
@@ -101,6 +115,7 @@ class ProfileState extends Equatable {
           emergencyContactPhone ?? this.emergencyContactPhone,
       emergencyContactRelation:
           emergencyContactRelation ?? this.emergencyContactRelation,
+      homeState: homeState ?? this.homeState,
       homeCity: homeCity ?? this.homeCity,
       homePincode: homePincode ?? this.homePincode,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
@@ -128,6 +143,7 @@ class ProfileState extends Equatable {
         emergencyContactName,
         emergencyContactPhone,
         emergencyContactRelation,
+        homeState,
         homeCity,
         homePincode,
         errorMessage,

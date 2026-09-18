@@ -3,8 +3,10 @@ import { fail, ok } from '../utils/http.js';
 import { aiLogger } from '../utils/aiLogger.js';
 import { normalizeAppLanguage } from '../utils/aiLocales.js';
 import { createGeminiLiveEphemeralToken, LIVE_MODEL } from '../utils/geminiLiveToken.js';
+import { resolveAppIntents } from '../agent/services/appIntentService.js';
 
 export const chatWithFlexiAgent = async (req, res) => {
+    console.log('chatWithFlexiAgent called with body:', req.body);
     // #swagger.tags = ['AI Agent']
     // #swagger.description = 'Interact with Fixly Conversational AI voice/text booking assistant'
     try {
@@ -27,6 +29,36 @@ export const chatWithFlexiAgent = async (req, res) => {
             conversationState,
         });
 
+        const appIntent = resolveAppIntents(message, { language: normalizedLanguage });
+
+        // App-only (theme/nav/pay UI) — skip booking graph for low latency.
+        if (appIntent.isAppOnly) {
+            const responsePayload = {
+                success: true,
+                reply: appIntent.replyHint || 'Done.',
+                state: { ...(conversationState || {}), language: normalizedLanguage },
+                action: 'APP_ACTION',
+                appActions: appIntent.actions,
+                data: { step: null, category: null },
+                booking: null,
+                bookings: null,
+                workers: null,
+                estimate: null,
+                policy: null,
+                suggestedReplies: [],
+                meta: {
+                    brain: 'app-intent',
+                    language: normalizedLanguage,
+                },
+            };
+            aiLogger.logTurnEnd({
+                action: 'APP_ACTION',
+                reply: responsePayload.reply,
+                state: responsePayload.state,
+            });
+            return ok(res, responsePayload);
+        }
+
         const io = req.app.get('io');
         const result = await processFixlyAgentMessage({
             userId,
@@ -43,6 +75,7 @@ export const chatWithFlexiAgent = async (req, res) => {
             reply: result.reply,
             state: result.state,
             action: result.action,
+            appActions: appIntent.actions,
             data: {
                 workers: result.workers || null,
                 booking: result.booking || null,
@@ -87,6 +120,7 @@ export const chatWithFlexiAgent = async (req, res) => {
 
 /** Mint short-lived Gemini Live token for device WebSocket (hybrid audio path). */
 export const mintLiveToken = async (req, res) => {
+    console.log('mintLiveToken called with body:', req.body);
     try {
         const language = normalizeAppLanguage(
             req.body?.language || req.user?.preferredLanguage || 'en',
@@ -108,8 +142,9 @@ export const mintLiveToken = async (req, res) => {
  * can run booking tools without loading the Live model.
  */
 export const liveToolBridge = async (req, res) => {
+    console.log('liveToolBridge called with body:', req.body);
     try {
-        const { utterance, conversationState, coordinates, addressLine, language } = req.body || {};
+        const { utterance, conversationState, coordinates, addressLine, language, tool } = req.body || {};
         if (!utterance || !String(utterance).trim()) {
             return fail(res, 400, 'VALIDATION_ERROR', 'utterance is required');
         }
@@ -118,11 +153,40 @@ export const liveToolBridge = async (req, res) => {
         const normalizedLanguage = normalizeAppLanguage(
             language || conversationState?.language || req.user?.preferredLanguage || 'en',
         );
+        const text = String(utterance).trim();
+        const appIntent = resolveAppIntents(text, { language: normalizedLanguage });
+        const toolName = String(tool || '').toLowerCase();
+
+        // App-tool or app-only utterance — skip booking graph.
+        if (toolName === 'call_fixly_app' || appIntent.isAppOnly) {
+            const hasActions = Array.isArray(appIntent.actions) && appIntent.actions.length > 0;
+            const fallbackReply = normalizedLanguage === 'hi'
+                ? 'समझ नहीं पाया कि कौन सा स्क्रीन खोलना है। प्रोफ़ाइल या बुकिंग्स कहकर देखें।'
+                : 'I could not map that to a screen. Try saying open profile or open bookings.';
+            return ok(res, {
+                success: true,
+                reply: appIntent.replyHint || (hasActions
+                    ? (normalizedLanguage === 'hi' ? 'हो गया।' : 'Done.')
+                    : fallbackReply),
+                state: { ...(conversationState || {}), language: normalizedLanguage },
+                action: 'APP_ACTION',
+                appActions: appIntent.actions,
+                booking: null,
+                bookings: null,
+                workers: null,
+                estimate: null,
+                policy: null,
+                suggestedReplies: [],
+                speakHint: appIntent.replyHint || (hasActions ? null : fallbackReply),
+                language: normalizedLanguage,
+            });
+        }
+
         const io = req.app.get('io');
 
         const result = await processFixlyAgentMessage({
             userId,
-            message: String(utterance).trim(),
+            message: text,
             conversationState: conversationState || {},
             coordinates,
             addressLine,
@@ -135,6 +199,7 @@ export const liveToolBridge = async (req, res) => {
             reply: result.reply,
             state: result.state,
             action: result.action,
+            appActions: appIntent.actions,
             booking: result.booking || null,
             bookings: result.bookings || null,
             workers: result.workers || null,

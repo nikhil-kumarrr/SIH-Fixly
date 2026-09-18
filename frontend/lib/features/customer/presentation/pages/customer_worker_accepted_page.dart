@@ -4,7 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/utils/rating_format.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../cubit/booking_flow_cubit.dart';
@@ -46,7 +48,12 @@ class _CustomerWorkerAcceptedPageState extends State<CustomerWorkerAcceptedPage>
         } else if (raw == 'IN_PROGRESS' || state.step == BookingStatus.inProgress) {
           context.pushReplacement(RouteNames.customerWorkStarted);
         } else if (state.step == BookingStatus.paid || state.booking?.paymentStatus == 'PAID') {
-          context.push(RouteNames.customerRating);
+          final id = state.booking?.id;
+          if (id != null && id.isNotEmpty) {
+            context.goRefreshing(RouteNames.customerRatingPath(id));
+          } else {
+            context.goRefreshing(RouteNames.customerRating);
+          }
         }
       },
       child: AppScaffold(
@@ -222,11 +229,17 @@ class _CustomerWorkerAcceptedPageState extends State<CustomerWorkerAcceptedPage>
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                const Row(
+                                Row(
                                   children: [
-                                    Icon(Icons.star, size: 16, color: Colors.amber),
-                                    SizedBox(width: 4),
-                                    Text('4.9 ★', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    const Icon(Icons.star, size: 16, color: Colors.amber),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      booking?.workerRating != null &&
+                                              booking!.workerRating! > 0
+                                          ? '${formatRating(booking.workerRating)} ★'
+                                          : 'New',
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
                                   ],
                                 ),
                               ],
@@ -257,7 +270,14 @@ class _CustomerWorkerAcceptedPageState extends State<CustomerWorkerAcceptedPage>
                   if (isPaid) ...[
                     PrimaryButton(
                       label: 'Rate & Review Specialist',
-                      onPressed: () => context.push(RouteNames.customerRating),
+                      onPressed: () {
+                        final id = booking?.id;
+                        if (id != null && id.isNotEmpty) {
+                          context.goRefreshing(RouteNames.customerRatingPath(id));
+                        } else {
+                          context.goRefreshing(RouteNames.customerRating);
+                        }
+                      },
                     ),
                   ] else if (isAwaitingPayment) ...[
                     PrimaryButton(

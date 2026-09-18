@@ -146,39 +146,42 @@ export default function CustomersPage() {
 
       {/* Customers Table */}
       <div
+        className="table-responsive"
         style={{
           backgroundColor: '#ffffff',
           borderRadius: '14px',
           border: '1px solid var(--border-light)',
-          overflow: 'hidden',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          width: '100%',
           boxShadow: 'var(--shadow-card)',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <table style={{ minWidth: '750px', width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
-            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700' }}>
-              <th onClick={() => toggleSort('name')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+              <th onClick={() => toggleSort('name')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Customer</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th style={{ padding: '14px 18px' }}>Contact & Location</th>
-              <th onClick={() => toggleSort('totalBookings')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Contact & Location</th>
+              <th onClick={() => toggleSort('totalBookings')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Total Bookings</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th onClick={() => toggleSort('rawSpent')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+              <th onClick={() => toggleSort('rawSpent')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Lifetime Spending</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th style={{ padding: '14px 18px' }}>Rating</th>
-              <th style={{ padding: '14px 18px' }}>Status</th>
-              <th style={{ padding: '14px 18px', textAlign: 'right' }}>Actions</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Rating</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Status</th>
+              <th style={{ padding: '14px 18px', textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
             </tr>
           </thead>
           <tbody>

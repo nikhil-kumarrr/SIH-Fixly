@@ -28,6 +28,7 @@ class AppUser extends Equatable {
     this.emergencyName,
     this.emergencyPhone,
     this.emergencyRelation,
+    this.homeState,
     this.homeCity,
     this.homePincode,
     this.marketingNotifications,
@@ -59,6 +60,11 @@ class AppUser extends Equatable {
   final String? emergencyName;
   final String? emergencyPhone;
   final String? emergencyRelation;
+
+  /// Worker: onboarding state. Customer: unused.
+  final String? homeState;
+
+  /// Worker: onboarding district. Customer: savedAddresses.city.
   final String? homeCity;
   final String? homePincode;
   final bool? marketingNotifications;
@@ -89,6 +95,7 @@ class AppUser extends Equatable {
     emergencyName,
     emergencyPhone,
     emergencyRelation,
+    homeState,
     homeCity,
     homePincode,
     marketingNotifications,
@@ -133,6 +140,7 @@ class WorkerProfile extends Equatable {
     this.federationName,
     this.includedTasks = const [],
     this.excludedTasks = const [],
+    this.recentWorkPhotos = const [],
   });
 
   final String id;
@@ -169,6 +177,7 @@ class WorkerProfile extends Equatable {
   final String? federationName;
   final List<String> includedTasks;
   final List<String> excludedTasks;
+  final List<String> recentWorkPhotos;
 
   @override
   List<Object?> get props => [
@@ -201,6 +210,7 @@ class WorkerProfile extends Equatable {
     bio,
     experienceYears,
     isVerified,
+    recentWorkPhotos,
   ];
 }
 
@@ -209,17 +219,38 @@ class WorkerReview extends Equatable {
     required this.reviewerName,
     required this.rating,
     required this.comment,
+    this.id,
+    this.bookingId,
     this.createdAt,
+    this.avatarUrl,
+    this.photos = const [],
+    this.badgesGiven = const [],
   });
 
+  final String? id;
+  final String? bookingId;
   final String reviewerName;
   final double rating;
   final String comment;
   final DateTime? createdAt;
+  final String? avatarUrl;
+  final List<String> photos;
+  final List<String> badgesGiven;
 
   @override
-  List<Object?> get props => [reviewerName, rating, comment, createdAt];
+  List<Object?> get props => [
+        id,
+        bookingId,
+        reviewerName,
+        rating,
+        comment,
+        createdAt,
+        avatarUrl,
+        photos,
+        badgesGiven,
+      ];
 }
+
 
 class ServiceItem extends Equatable {
   const ServiceItem({
@@ -279,6 +310,7 @@ enum BookingStatus {
   completed,
   paid,
   rating,
+  cancelled,
 }
 
 class BookingAddOn extends Equatable {
@@ -294,6 +326,56 @@ class BookingAddOn extends Equatable {
 
   @override
   List<Object?> get props => [title, price, quantity];
+}
+
+/// Worker rough estimate (parts + optional service charge on top of base).
+class WorkerEstimation extends Equatable {
+  const WorkerEstimation({
+    this.estimatedTotal = 0,
+    this.lockedBaseFee = 0,
+    this.laborCost = 0,
+    this.partsEstimate = 0,
+    this.serviceCharge = 0,
+    this.notes,
+    this.submittedAt,
+    this.customerAccepted = false,
+  });
+
+  final double estimatedTotal;
+  final double lockedBaseFee;
+  final double laborCost;
+  final double partsEstimate;
+  final double serviceCharge;
+  final String? notes;
+  final DateTime? submittedAt;
+  final bool customerAccepted;
+
+  factory WorkerEstimation.fromJson(Map<String, dynamic> json) {
+    return WorkerEstimation(
+      estimatedTotal: (json['estimatedTotal'] as num?)?.toDouble() ?? 0,
+      lockedBaseFee: (json['lockedBaseFee'] as num?)?.toDouble() ?? 0,
+      laborCost: (json['laborCost'] as num?)?.toDouble() ?? 0,
+      partsEstimate: (json['partsEstimate'] as num?)?.toDouble() ?? 0,
+      serviceCharge: (json['serviceCharge'] as num?)?.toDouble() ?? 0,
+      notes: json['notes']?.toString(),
+      submittedAt: json['submittedAt'] is String
+          ? DateTime.tryParse(json['submittedAt'] as String)
+          : null,
+      customerAccepted: json['customerAccepted'] == true,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        estimatedTotal,
+        lockedBaseFee,
+        laborCost,
+        partsEstimate,
+        serviceCharge,
+        notes,
+        submittedAt,
+        customerAccepted,
+      ];
 }
 
 class BookingInvoice extends Equatable {
@@ -315,6 +397,9 @@ class BookingInvoice extends Equatable {
     this.addOns = const [],
     this.jobStartedAt,
     this.jobCompletedAt,
+    this.couponCode,
+    this.couponDiscount = 0,
+    this.urgentFee = 0,
   });
 
   final String bookingId;
@@ -334,6 +419,26 @@ class BookingInvoice extends Equatable {
   final List<BookingAddOn> addOns;
   final DateTime? jobStartedAt;
   final DateTime? jobCompletedAt;
+  final String? couponCode;
+  final double couponDiscount;
+  final double urgentFee;
+
+  /// What customer pays (authoritative invoice total).
+  double get customerTotal =>
+      totalAmount > 0
+          ? totalAmount
+          : (baseServiceFee +
+                  extraPartsTotal +
+                  platformFee +
+                  urgentFee -
+                  couponDiscount)
+              .clamp(0.0, double.infinity);
+
+  /// Worker take-home: labor + parts + urgent. Coupon is Fixly subsidy — not deducted.
+  double get workerPayout {
+    return (baseServiceFee + extraPartsTotal + urgentFee)
+        .clamp(0.0, double.infinity);
+  }
 
   factory BookingInvoice.fromJson(Map<String, dynamic> json) {
     return BookingInvoice(
@@ -361,11 +466,21 @@ class BookingInvoice extends Equatable {
           const [],
       jobStartedAt: json['jobStartedAt'] != null ? DateTime.tryParse(json['jobStartedAt'].toString()) : null,
       jobCompletedAt: json['jobCompletedAt'] != null ? DateTime.tryParse(json['jobCompletedAt'].toString()) : null,
+      couponCode: json['couponCode']?.toString(),
+      couponDiscount: (json['couponDiscount'] as num?)?.toDouble() ?? 0,
+      urgentFee: (json['urgentFee'] as num?)?.toDouble() ?? 0,
     );
   }
 
   @override
-  List<Object?> get props => [bookingId, totalAmount, paymentStatus, addOns];
+  List<Object?> get props => [
+        bookingId,
+        totalAmount,
+        paymentStatus,
+        addOns,
+        couponCode,
+        couponDiscount,
+      ];
 }
 
 class Booking extends Equatable {
@@ -399,7 +514,11 @@ class Booking extends Equatable {
     this.jobStartedAt,
     this.jobCompletedAt,
     this.isReviewed = false,
+    this.workerReviewed = false,
     this.workerAvatar,
+    this.workerRating,
+    this.workerJobsCompleted,
+    this.customerId,
     this.customerName,
     this.customerPhone,
     this.customerAvatar,
@@ -412,6 +531,13 @@ class Booking extends Equatable {
     this.timeSlot,
     this.totalAmount,
     this.invoice,
+    this.workerEstimation,
+    this.workerNavigationStartedAt,
+    this.declineReason,
+    this.declinedBy,
+    this.cancelReason,
+    this.cancelledBy,
+    this.cancelledAt,
   });
 
   final String id;
@@ -443,7 +569,11 @@ class Booking extends Equatable {
   final DateTime? jobStartedAt;
   final DateTime? jobCompletedAt;
   final bool isReviewed;
+  final bool workerReviewed;
   final String? workerAvatar;
+  final double? workerRating;
+  final int? workerJobsCompleted;
+  final String? customerId;
   final String? customerName;
   final String? customerPhone;
   final String? customerAvatar;
@@ -456,6 +586,66 @@ class Booking extends Equatable {
   final String? timeSlot;
   final double? totalAmount;
   final BookingInvoice? invoice;
+  final WorkerEstimation? workerEstimation;
+  final DateTime? workerNavigationStartedAt;
+  final String? declineReason;
+  final String? declinedBy;
+  final String? cancelReason;
+  final String? cancelledBy;
+  final DateTime? cancelledAt;
+
+  bool get workerHasStartedNavigation => workerNavigationStartedAt != null;
+
+  bool get isCancelled =>
+      status == BookingStatus.cancelled ||
+      (rawStatus ?? '').toUpperCase() == 'CANCELLED';
+
+  bool get isPaid =>
+      status == BookingStatus.paid ||
+      (paymentStatus ?? '').toUpperCase() == 'PAID' ||
+      (rawStatus ?? '').toUpperCase() == 'PAID' ||
+      (rawStatus ?? '').toUpperCase() == 'PAYMENT_PAID';
+
+  /// Work done (or mapped completed) but customer still owes payment.
+  bool get isAwaitingPayment {
+    if (isCancelled || isPaid) return false;
+    final raw = (rawStatus ?? '').toUpperCase();
+    final pay = (paymentStatus ?? '').toUpperCase();
+    if (raw == 'PAYMENT_PENDING' || raw == 'AWAITING_PAYMENT') return true;
+    return status == BookingStatus.completed &&
+        pay != 'PAID' &&
+        raw != 'COMPLETED';
+  }
+
+  /// Job finished enough that review is expected for this role.
+  bool get isJobFinishedForReview {
+    if (isCancelled) return false;
+    final raw = (rawStatus ?? '').toUpperCase();
+    return isPaid ||
+        isAwaitingPayment ||
+        status == BookingStatus.completed ||
+        status == BookingStatus.paid ||
+        status == BookingStatus.rating ||
+        raw == 'COMPLETED' ||
+        raw == 'PAYMENT_PENDING' ||
+        raw == 'AWAITING_PAYMENT' ||
+        raw == 'PAID';
+  }
+
+  /// Customer rates after pay; worker rates after job complete.
+  bool needsReview({required bool isWorker}) {
+    if (!isJobFinishedForReview) return false;
+    if (isWorker) return !workerReviewed;
+    return isPaid && !isReviewed;
+  }
+
+  bool get cancelledByWorker {
+    if (!isCancelled) return false;
+    final by = (cancelledBy ?? declinedBy ?? '').trim();
+    final worker = (workerId ?? '').trim();
+    if (by.isNotEmpty && worker.isNotEmpty && by == worker) return true;
+    return declineReason != null && declineReason!.trim().isNotEmpty;
+  }
 
   double get totalPrice {
     // 1. Authoritative backend values: DO NOT recalculate or add extra parts on top!
@@ -482,6 +672,21 @@ class Booking extends Equatable {
     return estimatedPrice + urgent;
   }
 
+  /// Worker payout only (excludes platform fee; coupon is Fixly subsidy).
+  double get workerPayout {
+    if (invoice != null) return invoice!.workerPayout;
+    final base = baseServiceFee ?? 0.0;
+    final extra = extraPartsTotal ??
+        addOns.fold<double>(0.0, (sum, a) => sum + (a.price * a.quantity));
+    final urgent = urgentFee ?? 0.0;
+    if (base > 0 || extra > 0 || urgent > 0) {
+      return (base + extra + urgent).clamp(0.0, double.infinity);
+    }
+    final total = totalAmount ?? totalPrice;
+    final platform = platformFee ?? 0.0;
+    return (total - platform).clamp(0.0, double.infinity);
+  }
+
   bool get isSosBooking =>
       isEmergency ||
       (bookingType ?? '').toUpperCase() == 'EMERGENCY_SOS' ||
@@ -501,6 +706,9 @@ class Booking extends Equatable {
     BookingStatus? status,
     String? workerId,
     String? workerName,
+    String? workerAvatar,
+    double? workerRating,
+    int? workerJobsCompleted,
     double? estimatedPrice,
     List<BookingAddOn>? addOns,
     double? baseServiceFee,
@@ -510,6 +718,8 @@ class Booking extends Equatable {
     String? paymentStatus,
     double? totalAmount,
     BookingInvoice? invoice,
+    WorkerEstimation? workerEstimation,
+    DateTime? workerNavigationStartedAt,
   }) {
     return Booking(
       id: id,
@@ -541,7 +751,11 @@ class Booking extends Equatable {
       jobStartedAt: jobStartedAt,
       jobCompletedAt: jobCompletedAt,
       isReviewed: isReviewed,
-      workerAvatar: workerAvatar,
+      workerReviewed: workerReviewed,
+      workerAvatar: workerAvatar ?? this.workerAvatar,
+      workerRating: workerRating ?? this.workerRating,
+      workerJobsCompleted: workerJobsCompleted ?? this.workerJobsCompleted,
+      customerId: customerId,
       customerName: customerName,
       customerPhone: customerPhone,
       customerAvatar: customerAvatar,
@@ -554,6 +768,14 @@ class Booking extends Equatable {
       timeSlot: timeSlot,
       totalAmount: totalAmount ?? this.totalAmount,
       invoice: invoice ?? this.invoice,
+      workerEstimation: workerEstimation ?? this.workerEstimation,
+      workerNavigationStartedAt:
+          workerNavigationStartedAt ?? this.workerNavigationStartedAt,
+      declineReason: declineReason,
+      declinedBy: declinedBy,
+      cancelReason: cancelReason,
+      cancelledBy: cancelledBy,
+      cancelledAt: cancelledAt,
     );
   }
 
@@ -573,6 +795,12 @@ class Booking extends Equatable {
     customerName,
     totalAmount,
     invoice,
+    workerNavigationStartedAt,
+    declineReason,
+    declinedBy,
+    cancelReason,
+    cancelledBy,
+    cancelledAt,
   ];
 }
 
@@ -657,6 +885,18 @@ class WorkerJob extends Equatable {
     if (isSosBooking) return 'EMERGENCY SOS';
     if (isScheduledBooking) return 'SCHEDULED';
     return 'STANDARD';
+  }
+
+  /// Worker take-home — never includes platform fee.
+  double get workerPayout {
+    if (invoice != null) return invoice!.workerPayout;
+    final platform = platformFee ?? 0.0;
+    final base = baseServiceFee ?? 0.0;
+    final extras = extraPartsTotal ?? 0.0;
+    if (base > 0 || extras > 0) {
+      return (base + extras).clamp(0.0, double.infinity);
+    }
+    return (pay - platform).clamp(0.0, double.infinity);
   }
 
   WorkerJob copyWith({
@@ -894,6 +1134,9 @@ class OnboardingFormData extends Equatable {
     this.federationName,
     this.includedTasks = const {},
     this.excludedTasks = const {},
+    this.societyId,
+    this.societyMemberId,
+    this.recentWorkPhotoPaths = const [],
   });
 
   final String fullName;
@@ -934,6 +1177,9 @@ class OnboardingFormData extends Equatable {
   final String? federationName;
   final Map<String, List<String>> includedTasks;
   final Map<String, List<String>> excludedTasks;
+  final String? societyId;
+  final String? societyMemberId;
+  final List<String> recentWorkPhotoPaths;
 
   bool get hasAadhaarPhotos =>
       (aadhaarFrontPath?.isNotEmpty ?? false) &&
@@ -994,6 +1240,9 @@ class OnboardingFormData extends Equatable {
     String? federationName,
     Map<String, List<String>>? includedTasks,
     Map<String, List<String>>? excludedTasks,
+    String? societyId,
+    String? societyMemberId,
+    List<String>? recentWorkPhotoPaths,
   }) {
     return OnboardingFormData(
       fullName: fullName ?? this.fullName,
@@ -1048,6 +1297,10 @@ class OnboardingFormData extends Equatable {
       federationName: federationName ?? this.federationName,
       includedTasks: includedTasks ?? this.includedTasks,
       excludedTasks: excludedTasks ?? this.excludedTasks,
+      societyId: societyId ?? this.societyId,
+      societyMemberId: societyMemberId ?? this.societyMemberId,
+      recentWorkPhotoPaths:
+          recentWorkPhotoPaths ?? this.recentWorkPhotoPaths,
     );
   }
 
@@ -1085,6 +1338,13 @@ class OnboardingFormData extends Equatable {
     certificateFileName,
     selfieVerified,
     selfieImageUrl,
+    federationId,
+    federationName,
+    includedTasks,
+    excludedTasks,
+    societyId,
+    societyMemberId,
+    recentWorkPhotoPaths,
   ];
 }
 

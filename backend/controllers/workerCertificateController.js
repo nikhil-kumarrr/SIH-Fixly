@@ -4,6 +4,7 @@ import { fail, ok, isObjectId } from '../utils/http.js';
 import { notifyUser, safeNotify } from '../services/notificationService.js';
 import { extractTextFromImageURL } from '../utils/geminiVisionClient.js';
 import { getFuzzyMatchRatio } from '../utils/stringUtils.js';
+import { syncWorkerToRedis } from '../utils/homeCache.js';
 
 export const createCertificate = async (req, res) => {
     try {
@@ -140,6 +141,21 @@ export const adminReviewWorkerVerification = async (req, res) => {
                 dedupeKey: `KYC_${status.toUpperCase()}:${worker._id}:${worker.kycDocuments?.updatedAt || Date.now()}`,
             }));
         }
+
+        // Instantly synchronize worker profile and cache in Redis
+        await syncWorkerToRedis(worker._id, worker);
+
+        // Broadcast real-time event to mobile apps and admin panels
+        const io = req.app?.get('io');
+        if (io) {
+            io.emit('worker:verification_updated', {
+                workerId: worker._id,
+                status: worker.kycDocuments.status,
+                isVerified: worker.isVerified
+            });
+            io.emit('worker:updated', { worker });
+        }
+
         return ok(res, { data: { status: worker.kycDocuments.status, isVerified: worker.isVerified } });
     } catch (error) {
         return fail(res, 500, 'INTERNAL_ERROR', error.message);

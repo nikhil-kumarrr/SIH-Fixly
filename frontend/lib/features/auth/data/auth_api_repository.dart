@@ -295,7 +295,7 @@ class AuthApiRepository {
     final profile = profileRaw is Map
         ? Map<String, dynamic>.from(profileRaw)
         : <String, dynamic>{};
-    final hasProfile = profile.isNotEmpty;
+    final hasProfile = hasCompletedWorkerOnboarding(user);
 
     final kycDocsRaw = user['kycDocuments'];
     final kycDocs = kycDocsRaw is Map
@@ -369,7 +369,7 @@ class AuthApiRepository {
       return KycReviewStatus.submitted;
     }
 
-    if (profile.isNotEmpty) {
+    if (hasProfile) {
       final selfieOk = profile['selfieVerified'] == true;
       final hasDocs =
           profile['aadhaarNumber'] != null ||
@@ -381,6 +381,7 @@ class AuthApiRepository {
       return KycReviewStatus.submitted;
     }
 
+    // No onboarding yet — not under review.
     return KycReviewStatus.submitted;
   }
 
@@ -388,9 +389,11 @@ class AuthApiRepository {
   static String? mapDeclineReason(Map<String, dynamic> user) {
     final kycDocsRaw = user['kycDocuments'];
     if (kycDocsRaw is! Map) return null;
-    final reason = kycDocsRaw['declineReason']?.toString().trim();
-    if (reason == null || reason.isEmpty) return null;
-    return reason;
+    final decline = kycDocsRaw['declineReason']?.toString().trim();
+    if (decline != null && decline.isNotEmpty) return decline;
+    final manual = kycDocsRaw['manualReviewReason']?.toString().trim();
+    if (manual != null && manual.isNotEmpty) return manual;
+    return null;
   }
 
   Future<AppUser> updateProfile({
@@ -410,6 +413,7 @@ class AuthApiRepository {
     String? workAddress,
     String? gender,
     String? upiId,
+    String? homeState,
     String? homeCity,
     String? homePincode,
     bool isWorker = false,
@@ -440,19 +444,23 @@ class AuthApiRepository {
       if (workAddress != null) payload['workAddress'] = workAddress;
       if (gender != null) payload['gender'] = gender;
       if (upiId != null) payload['upiId'] = upiId;
-    } else if (workAddress != null) {
-      payload['savedAddresses'] = [
-        {
-          'label': 'Home',
-          'addressLine': workAddress,
-          if (homeCity != null) 'city': homeCity,
-          if (homePincode != null) 'pincode': homePincode,
-          'location': {
-            'type': 'Point',
-            'coordinates': [0, 0],
+      // Onboarding stores these on workerProfile — keep same keys on update.
+      if (homeState != null) payload['state'] = homeState;
+      if (homeCity != null) payload['district'] = homeCity;
+    } else {
+      if (workAddress != null || homeCity != null || homePincode != null) {
+        payload['savedAddresses'] = [
+          {
+            'label': 'Home',
+            'addressLine': workAddress ?? '',
+            if (homeCity != null) 'city': homeCity,
+            if (homePincode != null) 'pincode': homePincode,
           },
-        },
-      ];
+        ];
+        if (homeCity != null) payload['city'] = homeCity;
+        if (homePincode != null) payload['pincode'] = homePincode;
+        if (workAddress != null) payload['workAddress'] = workAddress;
+      }
     }
 
     Map<String, dynamic> res;
@@ -517,13 +525,44 @@ class AuthApiRepository {
     return AuthSession(user: user, accessToken: access, refreshToken: refresh);
   }
 
+  /// True only after worker finished onboarding (setup-profile), not a register stub.
+  static bool hasCompletedWorkerOnboarding(Map<String, dynamic> user) {
+    final profileRaw = user['workerProfile'];
+    if (profileRaw is! Map) return false;
+    final profile = Map<String, dynamic>.from(profileRaw);
+    if (profile.isEmpty) return false;
+
+    final category = profile['category']?.toString().trim() ?? '';
+    if (category.isNotEmpty) return true;
+
+    final categories = profile['categories'];
+    if (categories is List && categories.isNotEmpty) return true;
+
+    final docs = profile['identityDocuments'];
+    if (docs is List && docs.isNotEmpty) return true;
+
+    final kycRaw = user['kycDocuments'];
+    if (kycRaw is Map) {
+      final kyc = Map<String, dynamic>.from(kycRaw);
+      final status = (kyc['status']?.toString() ?? '').toUpperCase().trim();
+      if (status.isNotEmpty && status != 'NOT_STARTED') return true;
+      if ((kyc['aadhaarNumber']?.toString().trim() ?? '').isNotEmpty) {
+        return true;
+      }
+      if ((kyc['aadhaarFrontPhoto']?.toString().trim() ?? '').isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static AppUser mapUser(Map<String, dynamic> json) {
     final roleStr = (json['role'] as String?) ?? 'customer';
     final profileRaw = json['workerProfile'];
     final profile = profileRaw is Map
         ? Map<String, dynamic>.from(profileRaw)
         : <String, dynamic>{};
-    final hasProfile = profile.isNotEmpty;
+    final hasProfile = hasCompletedWorkerOnboarding(json);
 
     final emRaw = json['emergencyContact'];
     final em = emRaw is Map
@@ -579,7 +618,13 @@ class AuthApiRepository {
       emergencyName: em['name'] as String?,
       emergencyPhone: em['phone'] as String?,
       emergencyRelation: em['relation'] as String?,
-      homeCity: homeAddr?['city'] as String?,
+      homeState: (profile['state'] as String?)?.trim().isNotEmpty == true
+          ? (profile['state'] as String).trim()
+          : null,
+      homeCity: ((profile['district'] as String?)?.trim().isNotEmpty == true
+              ? (profile['district'] as String).trim()
+              : null) ??
+          (homeAddr?['city'] as String?),
       homePincode: homeAddr?['pincode'] as String?,
       marketingNotifications: notifPrefs?['marketing'] as bool?,
       systemNotifications: notifPrefs?['system'] as bool?,

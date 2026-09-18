@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -36,11 +37,15 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
   MapCoordinate? _destination;
   double? _workerHeading;
   List<MapCoordinate> _route = const [];
+  MapCoordinate? _routeFrom;
+  bool _routeLoading = false;
   StreamSubscription<Position>? _gpsSubscription;
+  Timer? _moveAnimTimer;
 
   bool _followWorker = true;
   bool _loading = true;
   bool _navigationStarted = false;
+  bool _startNavApiSent = false;
   String? _error;
 
   @override
@@ -51,6 +56,7 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
 
   @override
   void dispose() {
+    _moveAnimTimer?.cancel();
     _gpsSubscription?.cancel();
     _socket.disconnect();
     _socket.dispose();
@@ -95,6 +101,9 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
         _loading = false;
         _error = destination == null ? 'Waiting for location permission' : null;
       });
+
+      // Unlock customer Track as soon as worker opens navigation screen.
+      unawaited(_notifyNavigationStarted());
 
       await _loadRoute();
 
@@ -143,38 +152,90 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
           lng: position.longitude,
         );
 
-        final heading = position.heading > 0
-            ? position.heading
-            : (prev != null
-                ? TrackingHelpers.bearingDegrees(prev, nextCoord)
-                : 0.0);
+        final heading = TrackingHelpers.resolveBikeHeading(
+          position: nextCoord,
+          previous: prev,
+          route: _route,
+          reportedHeading: position.heading > 0 ? position.heading : null,
+        );
 
         final updatedWorker = nextCoord.copyWith(heading: heading);
-
         if (!mounted) return;
-        setState(() {
-          _workerPosition = updatedWorker;
-          _workerHeading = heading;
-          _navigationStarted = true;
-        });
 
+        _animateWorkerTo(updatedWorker, heading);
         _broadcastLocation(updatedWorker, heading);
+        unawaited(_loadRoute(from: updatedWorker));
       });
     } catch (e) {
       debugPrint('Error starting live GPS stream: $e');
     }
   }
 
-  Future<void> _loadRoute() async {
-    final from = _workerPosition;
-    final to = _destination;
-    if (from == null || to == null || !MapConstants.hasToken) return;
-    try {
-      final route = await _bookings.fetchDrivingRoute(from: from, to: to);
-      if (mounted && route.length >= 2) {
-        setState(() => _route = route);
+  void _animateWorkerTo(MapCoordinate target, double heading) {
+    final previous = _workerPosition ?? target;
+    final jump = TrackingHelpers.distanceMeters(previous, target);
+    if (jump < 1.5) {
+      setState(() {
+        _workerPosition = target;
+        _workerHeading = heading;
+        _navigationStarted = true;
+      });
+      return;
+    }
+
+    _moveAnimTimer?.cancel();
+    final duration = TrackingHelpers.smoothMoveDuration(jump);
+    const tickMs = 50;
+    final totalTicks = math.max(1, (duration.inMilliseconds / tickMs).round());
+    var tick = 0;
+    _moveAnimTimer = Timer.periodic(const Duration(milliseconds: tickMs), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
       }
-    } catch (_) {}
+      tick++;
+      final linear = (tick / totalTicks).clamp(0.0, 1.0);
+      final progress = TrackingHelpers.easeInOut(linear);
+      final current = TrackingHelpers.lerpCoordinate(previous, target, progress);
+      final frameHeading = TrackingHelpers.resolveBikeHeading(
+        position: current,
+        previous: previous,
+        route: _route,
+        reportedHeading: heading,
+      );
+      setState(() {
+        _workerPosition = current.copyWith(heading: frameHeading);
+        _workerHeading = frameHeading;
+        _navigationStarted = true;
+      });
+      if (linear >= 1.0) timer.cancel();
+    });
+  }
+
+  Future<void> _loadRoute({MapCoordinate? from}) async {
+    final origin = from ?? _workerPosition;
+    final to = _destination;
+    if (origin == null || to == null || !MapConstants.hasToken) return;
+    if (_routeLoading) return;
+    if (_routeFrom != null &&
+        _route.length >= 2 &&
+        TrackingHelpers.distanceMeters(_routeFrom!, origin) < 120) {
+      return;
+    }
+    _routeLoading = true;
+    try {
+      final route = await _bookings.fetchDrivingRoute(from: origin, to: to);
+      if (mounted && route.length >= 2) {
+        setState(() {
+          _route = route;
+          _routeFrom = origin;
+        });
+      }
+    } catch (e) {
+      debugPrint('WorkerNavigation._loadRoute: $e');
+    } finally {
+      _routeLoading = false;
+    }
   }
 
   void _broadcastLocation(MapCoordinate pos, double heading) {
@@ -188,6 +249,25 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
     );
   }
 
+
+  Future<void> _notifyNavigationStarted() async {
+    if (_startNavApiSent) return;
+    final bookingId = _job?.id ?? widget.bookingId;
+    if (bookingId == null || bookingId.isEmpty) return;
+    _startNavApiSent = true;
+    try {
+      await _bookings.startNavigation(bookingId);
+    } catch (e) {
+      _startNavApiSent = false;
+      debugPrint('startNavigation API failed: $e');
+      if (mounted) {
+        ToastUtils.showToast(
+          context: context,
+          message: 'Navigation sync failed — keep GPS on; Track unlocks on live location',
+        );
+      }
+    }
+  }
 
   Future<void> _makeWebRTCCall() async {
     final bookingId = _job?.id ?? widget.bookingId;
@@ -314,7 +394,10 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
     final distStr = TrackingHelpers.formatDistance(distanceMeters);
     final etaStr = TrackingHelpers.formatEta(TrackingHelpers.estimateEtaMinutes(distanceMeters));
 
-    return Scaffold(
+    return PopScope(
+      // Block edge-swipe / system back from dumping worker off the map.
+      canPop: false,
+      child: Scaffold(
       body: Stack(
         children: [
           // 1. Full Screen Interactive Navigation Map
@@ -333,12 +416,20 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
                     workerHeading: _workerHeading,
                     routeCoordinates: _route,
                     followWorker: _followWorker,
+                    // Smooth slide with GPS; leave zoom free for pinch / +/-.
+                    cameraFollowMinIntervalMs: 320,
                     claimGestures: true,
                     showZoomControls: true,
                     showRecenterButton: true,
                     show3DControl: true,
                     showNavigationOption: true,
                     controlsBottomPadding: 160.0,
+                    onNavigationChanged: (started) {
+                      if (!started) return;
+                      if (!mounted) return;
+                      setState(() => _navigationStarted = true);
+                      unawaited(_notifyNavigationStarted());
+                    },
                   ),
           ),
 
@@ -366,7 +457,7 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.arrow_back, color: Colors.white),
-                            onPressed: () => context.pop(),
+                            onPressed: () => Navigator.of(context).pop(),
                           ),
                           const SizedBox(width: 8),
                           const Icon(Icons.navigation, color: Color(0xFF38BDF8), size: 28),
@@ -517,6 +608,7 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
           ),
         ],
       ),
+    ),
     );
   }
 }

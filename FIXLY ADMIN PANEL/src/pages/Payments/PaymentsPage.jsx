@@ -208,31 +208,35 @@ export default function PaymentsPage() {
 
       {/* Transaction Table */}
       <div
+        className="table-responsive"
         style={{
           backgroundColor: '#ffffff',
           borderRadius: '14px',
           border: '1px solid var(--border-light)',
-          overflow: 'hidden',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          width: '100%',
           boxShadow: 'var(--shadow-card)',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <table style={{ minWidth: '880px', width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
-            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700' }}>
-              <th style={{ padding: '14px 18px' }}>Transaction ID</th>
-              <th style={{ padding: '14px 18px' }}>Parties & Booking</th>
-              <th style={{ padding: '14px 18px' }}>Gross Amount</th>
-              <th style={{ padding: '14px 18px' }}>Welfare Split (5%)</th>
-              <th style={{ padding: '14px 18px' }}>Worker Net (95%)</th>
-              <th style={{ padding: '14px 18px' }}>Payment Method</th>
-              <th style={{ padding: '14px 18px' }}>Status</th>
-              <th style={{ padding: '14px 18px', textAlign: 'right' }}>Invoice</th>
+            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Transaction ID</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Parties & Booking</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Gross Amount</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Coupon</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Welfare Split (5%)</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Worker Net (95%)</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Payment Method</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Status</th>
+              <th style={{ padding: '14px 18px', textAlign: 'right', whiteSpace: 'nowrap' }}>Invoice</th>
             </tr>
           </thead>
           <tbody>
             {paginated.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                <td colSpan="9" style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
                   No transactions found.
                 </td>
               </tr>
@@ -255,6 +259,17 @@ export default function PaymentsPage() {
 
                   <td style={{ padding: '14px 18px', fontWeight: '800', color: '#0f172a' }}>
                     {p.amount}
+                  </td>
+
+                  <td style={{ padding: '14px 18px', fontSize: '12px' }}>
+                    {p.couponCode ? (
+                      <div>
+                        <div style={{ fontWeight: '700', color: '#15803d' }}>{p.couponCode}</div>
+                        <div style={{ color: '#64748b' }}>−₹{p.couponDiscount || 0}</div>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#94a3b8' }}>—</span>
+                    )}
                   </td>
 
                   <td style={{ padding: '14px 18px', fontWeight: '600', color: '#15803d' }}>

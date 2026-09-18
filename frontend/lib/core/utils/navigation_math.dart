@@ -18,6 +18,35 @@ abstract final class NavigationMath {
   static double bikeIconRotation(MapCoordinate from, MapCoordinate to) =>
       bearingDegrees(from, to);
 
+  /// Heading along road polyline toward destination (avoids flipped GPS / crow-flies).
+  static double? headingAlongRoute(
+    MapCoordinate position,
+    List<MapCoordinate> route, {
+    int lookAheadPoints = 3,
+  }) {
+    if (route.length < 2) return null;
+    var closestIdx = 0;
+    var minDist = double.infinity;
+    for (var i = 0; i < route.length; i++) {
+      final d = distanceMeters(position, route[i]);
+      if (d < minDist) {
+        minDist = d;
+        closestIdx = i;
+      }
+    }
+    final aheadIdx =
+        closestIdx + lookAheadPoints < route.length
+            ? closestIdx + lookAheadPoints
+            : route.length - 1;
+    if (aheadIdx <= closestIdx) {
+      if (closestIdx > 0) {
+        return bearingDegrees(route[closestIdx - 1], route[closestIdx]);
+      }
+      return null;
+    }
+    return bearingDegrees(route[closestIdx], route[aheadIdx]);
+  }
+
   static double distanceMeters(MapCoordinate from, MapCoordinate to) {
     const radius = 6371000.0;
     final lat1 = from.lat * math.pi / 180;

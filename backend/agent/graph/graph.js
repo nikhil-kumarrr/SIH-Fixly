@@ -19,8 +19,8 @@ const getSuggestedReplies = (action, state = {}, lang = "hi") => {
                 : ["Plumbing repair", "Electrician / Wiring", "Deep home cleaning", "AC service"];
         case "PROMPT_BOOKING_TYPE":
             return isHi
-                ? ["⚡ Emergency SOS (तुरंत)", "⏱️ Standard (सामान्य)", "📅 Schedule (आगे का समय)"]
-                : ["⚡ Emergency SOS", "⏱️ Standard Booking", "📅 Schedule for Later"];
+                ? ["Emergency SOS (तुरंत)", "Standard (सामान्य)", "Schedule (आगे का समय)"]
+                : ["Emergency SOS", "Standard Booking", "Schedule for Later"];
         case "PROMPT_WORKER_SELECTION":
             return isHi
                 ? ["स्वतः निकटतम चुनें (Auto)", "पहला कार्यकर्ता चुनें", "रद्द करें"]
@@ -45,6 +45,73 @@ const getSuggestedReplies = (action, state = {}, lang = "hi") => {
 };
 
 /**
+ * Category-aware diagnostic question — makes Fixly AI talk like a real
+ * representative: it first understands the exact problem before pulling workers.
+ */
+const getDiagnosisPrompt = (category = "", isHi = false) => {
+    const c = category.toLowerCase();
+    const table = {
+        plumb: {
+            en: "Got it — a plumbing problem. To send the right pro, tell me what's happening. Is it a leaking tap, a blocked drain, low water pressure, or a running/overflowing toilet?",
+            hi: "समझ गया — प्लंबिंग की समस्या। सही कारीगर भेजने के लिए बताइए क्या हो रहा है? नल से रिसाव, जाम पाइप/ड्रेन, कम पानी का प्रेशर, या टॉयलेट लीक?",
+            chipsEn: ["Leaking tap", "Blocked drain", "Low water pressure", "Toilet issue"],
+            chipsHi: ["नल से रिसाव", "जाम ड्रेन", "कम प्रेशर", "टॉयलेट समस्या"],
+        },
+        elect: {
+            en: "Understood — an electrical issue. What exactly is the problem? For example: a fan not working, a switch/socket sparking, a tripping MCB, or a power/wiring fault?",
+            hi: "समझ गया — बिजली की समस्या। ठीक-ठीक क्या दिक्कत है? जैसे: पंखा नहीं चल रहा, स्विच/सॉकेट में चिंगारी, MCB बार-बार गिर रहा, या वायरिंग/पावर फॉल्ट?",
+            chipsEn: ["Fan not working", "Switch sparking", "MCB tripping", "Wiring/power fault"],
+            chipsHi: ["पंखा नहीं चल रहा", "स्विच में चिंगारी", "MCB गिर रहा", "वायरिंग फॉल्ट"],
+        },
+        clean: {
+            en: "Sure — a cleaning service. What would you like cleaned? For example: full home deep clean, bathroom, kitchen, or sofa/carpet?",
+            hi: "ठीक है — सफाई सेवा। क्या साफ़ करवाना है? जैसे: पूरे घर की डीप क्लीनिंग, बाथरूम, किचन, या सोफा/कारपेट?",
+            chipsEn: ["Full home deep clean", "Bathroom", "Kitchen", "Sofa/Carpet"],
+            chipsHi: ["पूरे घर की सफाई", "बाथरूम", "किचन", "सोफा/कारपेट"],
+        },
+        carp: {
+            en: "Got it — carpentry work. What do you need? For example: a door/lock repair, furniture fix, drawer/hinge issue, or new fitting?",
+            hi: "समझ गया — कारपेंटर का काम। क्या चाहिए? जैसे: दरवाज़ा/ताला ठीक करना, फर्नीचर रिपेयर, दराज़/कब्ज़ा, या नई फिटिंग?",
+            chipsEn: ["Door/Lock repair", "Furniture fix", "Drawer/Hinge", "New fitting"],
+            chipsHi: ["दरवाज़ा/ताला", "फर्नीचर रिपेयर", "दराज़/कब्ज़ा", "नई फिटिंग"],
+        },
+        appl: {
+            en: "Understood — an appliance issue. Which appliance and what's wrong? For example: AC not cooling, fridge fault, washing machine, or geyser/RO?",
+            hi: "समझ गया — उपकरण की समस्या। कौन-सा उपकरण और क्या दिक्कत है? जैसे: AC ठंडा नहीं कर रहा, फ्रिज खराब, वॉशिंग मशीन, या गीज़र/RO?",
+            chipsEn: ["AC not cooling", "Fridge fault", "Washing machine", "Geyser/RO"],
+            chipsHi: ["AC ठंडा नहीं", "फ्रिज खराब", "वॉशिंग मशीन", "गीज़र/RO"],
+        },
+        paint: {
+            en: "Sure — painting work. What's the scope? For example: a single room, full home, a wall/patch touch-up, or waterproofing?",
+            hi: "ठीक है — पेंटिंग का काम। कितना करवाना है? जैसे: एक कमरा, पूरा घर, दीवार/पैच टच-अप, या वॉटरप्रूफिंग?",
+            chipsEn: ["Single room", "Full home", "Wall touch-up", "Waterproofing"],
+            chipsHi: ["एक कमरा", "पूरा घर", "दीवार टच-अप", "वॉटरप्रूफिंग"],
+        },
+        garden: {
+            en: "Got it — gardening help. What do you need? For example: lawn mowing, plant trimming, garden cleanup, or new planting?",
+            hi: "समझ गया — बागवानी में मदद। क्या चाहिए? जैसे: घास की कटाई, पौधों की छँटाई, बगीचे की सफाई, या नई रोपाई?",
+            chipsEn: ["Lawn mowing", "Plant trimming", "Garden cleanup", "New planting"],
+            chipsHi: ["घास कटाई", "पौधों की छँटाई", "बगीचे की सफाई", "नई रोपाई"],
+        },
+    };
+
+    const key = Object.keys(table).find((k) => c.includes(k));
+    const entry = key ? table[key] : null;
+    if (!entry) {
+        return {
+            question: isHi
+                ? `समझ गया — ${category} सेवा। कृपया अपनी समस्या थोड़ा विस्तार से बताइए ताकि मैं सही कारीगर भेज सकूँ।`
+                : `Understood — a ${category} request. Could you describe the exact issue in a line so I can match the right professional?`,
+            chips: [],
+        };
+    }
+    return {
+        question: isHi ? entry.hi : entry.en,
+        chips: isHi ? entry.chipsHi : entry.chipsEn,
+    };
+};
+
+/**
  * Main Agent Handler Node
  */
 export const fixlyAgentHandler = async (state) => {
@@ -55,8 +122,8 @@ export const fixlyAgentHandler = async (state) => {
     // 1. IDENTITY QUERY
     if (state.intent === "IDENTITY_QUERY") {
         const reply = isHi
-            ? "नमस्ते! मैं Fixly AI Assistant हूँ, जिसे वैभव जैन (Vaibhav Jain) द्वारा Fixly Cooperative प्लेटफॉर्म के लिए विकसित किया गया है। मैं प्लंबिंग, बिजली, घर की सफाई, कारपेंटर आदि घरेलू सेवाओं की बुकिंग में आपकी सहायता करता हूँ।"
-            : "Hello! I am Fixly AI Assistant, developed by Vaibhav Jain for Fixly Cooperative Gig Services. I help you book verified home professionals like Plumbers, Electricians, Cleaners, and Carpenters.";
+            ? "नमस्ते! मैं Fixly AI Assistant हूँ, जिसे वैभव जैन (Code Vertex Team) द्वारा Fixly Cooperative प्लेटफॉर्म के लिए विकसित किया गया है। मैं प्लंबिंग, बिजली, घर की सफाई, कारपेंटर आदि घरेलू सेवाओं की बुकिंग में आपकी सहायता करता हूँ।"
+            : "Hello! I am Fixly AI Assistant, developed by Code Vertex Team for Fixly Cooperative Gig Services. I help you book verified home professionals like Plumbers, Electricians, Cleaners, and Carpenters.";
         return {
             ...state,
             aiResponse: reply,
@@ -141,16 +208,28 @@ export const fixlyAgentHandler = async (state) => {
             }
 
             const latest = userBookings[0];
-            const workerInfo = latest.worker ? `${latest.worker.name} (${latest.worker.phone || ""})` : (isHi ? "कार्यकर्ता आवंटित हो रहा है" : "Assigning worker");
+            const workerInfo = latest.worker
+                ? latest.worker.name
+                : (isHi ? "कार्यकर्ता आवंटित हो रहा है" : "Assigning worker");
             const reply = isHi
-                ? `आपकी हालिया बुकिंग #${latest.bookingId} (${latest.service?.title || latest.problemDescription || "Service"}) की स्थिति "${latest.status}" है। कार्यकर्ता: ${workerInfo}।`
-                : `Your recent booking #${latest.bookingId} (${latest.service?.title || latest.problemDescription || "Service"}) is currently "${latest.status}". Assigned worker: ${workerInfo}.`;
+                ? `आपकी हालिया बुकिंग #${latest.bookingId} (${latest.service?.title || latest.problemDescription || "Service"}) की स्थिति "${latest.status}" है। कार्यकर्ता: ${workerInfo}। ऐप से सुरक्षित कॉल करें — फोन नंबर साझा नहीं किया जाता।`
+                : `Your recent booking #${latest.bookingId} (${latest.service?.title || latest.problemDescription || "Service"}) is currently "${latest.status}". Assigned worker: ${workerInfo}. Use in-app call — phone numbers are never shared.`;
+
+            // Never leak worker phone numbers into AI chat payloads.
+            const safeBookings = userBookings.map((b) => {
+                const copy = { ...b };
+                if (copy.worker && typeof copy.worker === 'object') {
+                    const { phone, ...workerRest } = copy.worker;
+                    copy.worker = workerRest;
+                }
+                return copy;
+            });
 
             return {
                 ...state,
                 aiResponse: reply,
                 action: "BOOKING_STATUS",
-                bookings: userBookings,
+                bookings: safeBookings,
                 suggestedReplies: getSuggestedReplies("BOOKING_STATUS", state, lang)
             };
         } catch (e) {
@@ -193,13 +272,48 @@ export const fixlyAgentHandler = async (state) => {
     }
     currentCategory = categoryCheck.matchedCategory;
 
-    // STEP B: Fetch available workers immediately for this category
-    const availableWorkers = await getAvailableWorkers({ category: currentCategory });
+    // STEP A3: DIAGNOSIS — behave like a real representative and understand the
+    // exact problem BEFORE surfacing workers. Ask exactly once per session.
+    const pastDiagnosis =
+        state.step === "AWAITING_DIAGNOSIS" ||
+        Boolean(state.bookingType) ||
+        Boolean(state.workerId) ||
+        [
+            "AWAITING_BOOKING_TYPE",
+            "AWAITING_WORKER_SELECTION",
+            "AWAITING_SCHEDULE_TIME",
+            "AWAITING_CONFIRMATION",
+            "NO_WORKERS",
+            "COMPLETED",
+        ].includes(state.step);
+
+    if (!pastDiagnosis && !state.isEmergency) {
+        const { question, chips } = getDiagnosisPrompt(currentCategory, isHi);
+        return {
+            ...state,
+            category: currentCategory,
+            step: "AWAITING_DIAGNOSIS",
+            aiResponse: question,
+            action: "PROMPT_DIAGNOSIS",
+            suggestedReplies: chips,
+        };
+    }
+
+    // Capture the symptom the user just described in reply to the diagnosis.
+    if (state.step === "AWAITING_DIAGNOSIS" && text) {
+        state.problemDescription = text;
+    }
+
+    // STEP B: Fetch available workers for this category (used from here on)
+    const availableWorkers = await getAvailableWorkers({
+        category: currentCategory,
+        coordinates: state.coordinates
+    });
 
     if (!availableWorkers || availableWorkers.length === 0) {
         const reply = isHi
             ? `माफ़ कीजिए, वर्तमान में आपके क्षेत्र में ${currentCategory} के कोई कार्यकर्ता उपलब्ध नहीं हैं। क्या आप बाद के समय के लिए शेड्यूल करना चाहेंगे?`
-            : `Sorry, no verified ${currentCategory} workers are currently available in your area. Would you like to schedule for later?`;
+            : `Sorry, no verified ${currentCategory} workers are currently available near your location. Would you like to schedule for later?`;
         return {
             ...state,
             category: currentCategory,
@@ -207,21 +321,29 @@ export const fixlyAgentHandler = async (state) => {
             step: "NO_WORKERS",
             aiResponse: reply,
             action: "NO_WORKERS_AVAILABLE",
-            suggestedReplies: ["📅 Schedule for Later", "Try another service", "Cancel"]
+            suggestedReplies: ["Schedule for Later", "Try another service", "Cancel"]
         };
     }
 
     // STEP C: Check Booking Type (STANDARD vs EMERGENCY_SOS vs SCHEDULED)
+    // Deterministic FSM: once past this step, never re-ask (recover missing slot).
     let currentBookingType = state.bookingType;
+    if (
+        !currentBookingType &&
+        ["AWAITING_WORKER_SELECTION", "AWAITING_CONFIRMATION", "AWAITING_SCHEDULE_TIME"].includes(state.step)
+    ) {
+        currentBookingType = "STANDARD";
+        console.warn("[FixlyAgent] Recovered missing bookingType → STANDARD at step", state.step);
+    }
 
     if (!currentBookingType) {
         const reply = isHi
-            ? `मैंने आपकी ${currentCategory} सेवा की आवश्यकता नोट कर ली है। हमारे पास आपके क्षेत्र में ${availableWorkers.length} सत्यापित कार्यकर्ता उपलब्ध हैं!\nआप इसे कैसे बुक करना चाहते हैं?\n• ⚡ Emergency SOS (तत्काल 15-30 मिनट में)\n• ⏱️ Standard (सामान्य सेवा)\n• 📅 Schedule (आगे के समय के लिए)`
-            : `Noted your ${currentCategory} request! Found ${availableWorkers.length} verified cooperative workers near you.\nHow would you like to book?\n• ⚡ Emergency SOS (Instant priority)\n• ⏱️ Standard (Regular service)\n• 📅 Schedule for Later`;
+            ? `ठीक है, ${currentCategory} सेवा नोट कर ली। आपके क्षेत्र में ${availableWorkers.length} सत्यापित कार्यकर्ता उपलब्ध हैं। आप इसे कैसे बुक करना चाहेंगे?\n• Emergency SOS (तत्काल, 15-30 मिनट में)\n• Standard (सामान्य सेवा)\n• Schedule (आगे के समय के लिए)`
+            : `Got it, noted your ${currentCategory} request. There are ${availableWorkers.length} verified professionals available near you. How would you like to book?\n• Emergency SOS (instant priority)\n• Standard (regular service)\n• Schedule for later`;
         return {
             ...state,
             category: currentCategory,
-            workers: availableWorkers,
+            // Workers are NOT attached here — they are shown once at worker selection.
             step: "AWAITING_BOOKING_TYPE",
             aiResponse: reply,
             action: "PROMPT_BOOKING_TYPE",
@@ -229,9 +351,47 @@ export const fixlyAgentHandler = async (state) => {
         };
     }
 
-    // STEP D1: If EMERGENCY SOS -> Fast Path!
+    // STEP D1: If EMERGENCY SOS -> Fast Path with Nearest Worker Selection
     if (currentBookingType === "EMERGENCY_SOS" || state.isEmergency) {
-        const assignedWorker = availableWorkers[0]; // Nearest worker auto-assigned
+        let assignedWorker = null;
+        if (state.workerId) {
+            assignedWorker = availableWorkers.find(w => String(w._id) === String(state.workerId)) || availableWorkers[0];
+        } else {
+            const choice = matchWorkerChoice(state.workerSelection || text, availableWorkers);
+            if (choice) {
+                if (choice.isAuto) {
+                    state.isAutoAssign = true;
+                    assignedWorker = choice.worker || availableWorkers[0];
+                } else if (choice.worker) {
+                    assignedWorker = choice.worker;
+                }
+                if (assignedWorker) {
+                    state.workerId = assignedWorker._id;
+                    state.workerName = assignedWorker.name;
+                    state.workerRate = assignedWorker.hourlyRate;
+                }
+            }
+        }
+
+        // If worker not chosen yet, present available workers for Emergency SOS!
+        if (!assignedWorker && !state.isAutoAssign && !state.workerId) {
+            const reply = isHi
+                ? `आपातकालीन सेवा (Emergency SOS) के लिए आपके क्षेत्र में ${availableWorkers.length} सत्यापित कार्यकर्ता उपलब्ध हैं। नीचे से कार्यकर्ता चुनें या "स्वतः असाइन करें" कहें:`
+                : `For Emergency SOS, found ${availableWorkers.length} verified cooperative workers near you. Please select a worker below or reply "Auto-assign":`;
+            return {
+                ...state,
+                category: currentCategory,
+                bookingType: "EMERGENCY_SOS",
+                isEmergency: true,
+                workers: availableWorkers,
+                step: "AWAITING_WORKER_SELECTION",
+                aiResponse: reply,
+                action: "PROMPT_WORKER_SELECTION",
+                suggestedReplies: getSuggestedReplies("PROMPT_WORKER_SELECTION", state, lang)
+            };
+        }
+
+        assignedWorker = assignedWorker || availableWorkers[0];
         const autoDesc = await generateAutoDescription({
             category: currentCategory,
             promptText: state.problemDescription || text,
@@ -261,8 +421,8 @@ export const fixlyAgentHandler = async (state) => {
             });
 
             const reply = isHi
-                ? `⚡ आपातकालीन SOS बुकिंग #${newBooking.bookingId} दर्ज कर ली गई है! निकटतम कार्यकर्ता ${assignedWorker?.name} को तुरंत रवाना किया गया है। कुल राशि: ₹${estimate.totalAmount}।`
-                : `⚡ Emergency SOS booking #${newBooking.bookingId} confirmed! Nearest worker ${assignedWorker?.name} has been dispatched immediately. Total amount: ₹${estimate.totalAmount}.`;
+                ? `आपातकालीन SOS बुकिंग #${newBooking.bookingId} दर्ज कर ली गई है। निकटतम कार्यकर्ता ${assignedWorker?.name} को तुरंत रवाना किया गया है। कुल राशि: ₹${estimate.totalAmount}।`
+                : `Emergency SOS booking #${newBooking.bookingId} confirmed. Nearest worker ${assignedWorker?.name} has been dispatched immediately. Total amount: ₹${estimate.totalAmount}.`;
 
             return {
                 ...state,
@@ -284,8 +444,8 @@ export const fixlyAgentHandler = async (state) => {
 
         // Prompt SOS Confirmation
         const reply = isHi
-            ? `⚡ आपातकालीन सेवा तैयार है:\n• कार्यकर्ता: ${assignedWorker?.name} (${assignedWorker?.rating}★, ${assignedWorker?.distanceKm} किमी दूर)\n• अनुमानित लागत: ₹${estimate.totalAmount} (₹50 आपातकालीन शुल्क शामिल, ₹0 प्लेटफार्म शुल्क)\n• कार्य विवरण: "${autoDesc}"\n\nक्या मैं तुरंत कार्यकर्ता को रवाना करने के लिए बुकिंग कन्फर्म कर दूँ? (हाँ / नहीं बोलें)`
-            : `⚡ Emergency SOS Dispatch Ready:\n• Worker: ${assignedWorker?.name} (${assignedWorker?.rating}★, ${assignedWorker?.distanceKm} km away)\n• Total Amount: ₹${estimate.totalAmount} (Includes ₹50 emergency fee, ₹0 platform fee)\n• Task: "${autoDesc}"\n\nShall I confirm immediate dispatch? (Reply Yes / No)`;
+            ? `आपातकालीन सेवा तैयार है:\n• कार्यकर्ता: ${assignedWorker?.name} (${assignedWorker?.rating}★, ${assignedWorker?.distanceKm} किमी दूर)\n• अनुमानित लागत: ₹${estimate.totalAmount} (₹50 आपातकालीन शुल्क शामिल, ₹0 प्लेटफार्म शुल्क)\n• कार्य विवरण: "${autoDesc}"\n\nक्या मैं तुरंत कार्यकर्ता को रवाना करने के लिए बुकिंग कन्फर्म कर दूँ? (हाँ / नहीं बोलें)`
+            : `Emergency service ready:\n• Worker: ${assignedWorker?.name} (${assignedWorker?.rating}★, ${assignedWorker?.distanceKm} km away)\n• Total Amount: ₹${estimate.totalAmount} (Includes ₹50 emergency fee, ₹0 platform fee)\n• Task: "${autoDesc}"\n\nShall I confirm immediate dispatch? (Reply Yes / No)`;
 
         return {
             ...state,
@@ -294,7 +454,7 @@ export const fixlyAgentHandler = async (state) => {
             isEmergency: true,
             workerId: assignedWorker?._id,
             workerName: assignedWorker?.name,
-            workers: availableWorkers,
+            workerRate: assignedWorker?.hourlyRate,
             problemDescription: autoDesc,
             estimate,
             policy,
@@ -320,7 +480,6 @@ export const fixlyAgentHandler = async (state) => {
                     ...state,
                     category: currentCategory,
                     bookingType: "SCHEDULED",
-                    workers: availableWorkers,
                     step: "AWAITING_SCHEDULE_TIME",
                     aiResponse: reply,
                     action: "PROMPT_SCHEDULE_TIME",
@@ -390,8 +549,8 @@ export const fixlyAgentHandler = async (state) => {
         });
 
         const reply = isHi
-            ? `🎉 बधाई हो! आपकी ${currentCategory} सेवा की बुकिंग #${newBooking.bookingId} सफलतापूर्वक दर्ज कर ली गई है। कुल अनुमानित शुल्क: ₹${estimate.totalAmount}। आवंटित कार्यकर्ता: ${selectedWorkerName || "Fixly Worker"}।`
-            : `🎉 Congratulations! Your ${currentCategory} booking #${newBooking.bookingId} has been confirmed. Total estimated fee: ₹${estimate.totalAmount}. Assigned worker: ${selectedWorkerName || "Fixly Worker"}.`;
+            ? `बधाई हो! आपकी ${currentCategory} सेवा की बुकिंग #${newBooking.bookingId} सफलतापूर्वक दर्ज कर ली गई है। कुल अनुमानित शुल्क: ₹${estimate.totalAmount}। आवंटित कार्यकर्ता: ${selectedWorkerName || "Fixly Worker"}।`
+            : `Your ${currentCategory} booking #${newBooking.bookingId} has been confirmed. Total estimated fee: ₹${estimate.totalAmount}. Assigned worker: ${selectedWorkerName || "Fixly Worker"}.`;
 
         return {
             ...state,
@@ -412,8 +571,8 @@ export const fixlyAgentHandler = async (state) => {
     // STEP G: Prompt Confirmation with Summary & Fair Wage Policy
     const scheduleLine = state.scheduledTime ? (isHi ? `\n• समय: ${state.scheduledTime}` : `\n• Scheduled: ${state.scheduledTime}`) : "";
     const reply = isHi
-        ? `लागत अनुमान तैयार है:\n• आधार शुल्क: ₹${estimate.baseServiceFee}\n• प्लेटफॉर्म शुल्क: ₹0 (Fixly सहकारी मॉडल)\n• कुल राशि: ₹${estimate.totalAmount}${scheduleLine}\n🛡️ Fixly निष्पक्ष मजदूरी: 100% राशि सीधे कार्यकर्ता को दी जाती है।\nकार्यकर्ता: ${selectedWorkerName || "चयनित कार्यकर्ता"}।\n\nक्या मैं आपकी यह बुकिंग कन्फर्म कर दूँ? (हाँ / नहीं बोलें)`
-        : `Here is your price estimate:\n• Base Service Fee: ₹${estimate.baseServiceFee}\n• Platform Fee: ₹0 (Fixly Cooperative)\n• Total Amount: ₹${estimate.totalAmount}${scheduleLine}\n🛡️ Fixly Fair Wage Guarantee: 100% payout directly to worker.\nWorker: ${selectedWorkerName || "Selected Worker"}.\n\nShall I confirm and place this booking for you? (Reply Yes / No)`;
+        ? `लागत अनुमान तैयार है:\n• आधार शुल्क: ₹${estimate.baseServiceFee}\n• प्लेटफॉर्म शुल्क: ₹0 (Fixly सहकारी मॉडल)\n• कुल राशि: ₹${estimate.totalAmount}${scheduleLine}\nFixly निष्पक्ष मजदूरी: 100% राशि सीधे कार्यकर्ता को दी जाती है।\nकार्यकर्ता: ${selectedWorkerName || "चयनित कार्यकर्ता"}।\n\nक्या मैं आपकी यह बुकिंग कन्फर्म कर दूँ? (हाँ / नहीं बोलें)`
+        : `Here is your price estimate:\n• Base Service Fee: ₹${estimate.baseServiceFee}\n• Platform Fee: ₹0 (Fixly Cooperative)\n• Total Amount: ₹${estimate.totalAmount}${scheduleLine}\nFixly Fair Wage Guarantee: 100% payout directly to the worker.\nWorker: ${selectedWorkerName || "Selected Worker"}.\n\nShall I confirm and place this booking for you? (Reply Yes / No)`;
 
     return {
         ...state,
@@ -422,7 +581,7 @@ export const fixlyAgentHandler = async (state) => {
         workerId: selectedWorkerId,
         workerName: selectedWorkerName,
         workerRate: selectedWorkerRate,
-        workers: availableWorkers,
+        // Workers already chosen — no carousel on the confirmation step.
         estimate,
         policy,
         step: "AWAITING_CONFIRMATION",

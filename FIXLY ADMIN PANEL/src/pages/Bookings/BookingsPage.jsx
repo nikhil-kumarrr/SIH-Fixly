@@ -23,9 +23,12 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import AssignWorkerModal from '../../components/modals/AssignWorkerModal';
 import RescheduleBookingModal from '../../components/modals/RescheduleBookingModal';
 import EmergencyDispatchModal from '../../components/modals/EmergencyDispatchModal';
+import { getMergedCategories } from '../../data/services';
 
 export default function BookingsPage() {
-  const { bookings, bookingsPagination, fetchBookings, cancelBooking, updateBookingStatus } = useApp();
+  const { bookings, bookingsPagination, fetchBookings, cancelBooking, updateBookingStatus, services } = useApp();
+
+  const serviceOptions = React.useMemo(() => getMergedCategories(services), [services]);
 
   // Filter & Search states
   const [search, setSearch] = useState('');
@@ -230,13 +233,9 @@ export default function BookingsPage() {
           }}
         >
           <option value="All">All Services</option>
-          <option value="Plumbing">Plumbing</option>
-          <option value="Electrical">Electrical</option>
-          <option value="Carpentry">Carpentry</option>
-          <option value="Cleaning">Cleaning</option>
-          <option value="AC Repair">AC Repair</option>
-          <option value="Caregiving">Caregiving</option>
-          <option value="Painting">Painting</option>
+          {serviceOptions.map((srv) => (
+            <option key={srv} value={srv}>{srv}</option>
+          ))}
         </select>
 
         {/* Status Pills */}
@@ -266,39 +265,42 @@ export default function BookingsPage() {
 
       {/* Bookings Table */}
       <div
+        className="table-responsive"
         style={{
           backgroundColor: '#ffffff',
           borderRadius: '14px',
           border: '1px solid var(--border-light)',
-          overflow: 'hidden',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          width: '100%',
           boxShadow: 'var(--shadow-card)',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <table style={{ minWidth: '850px', width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
-            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700' }}>
-              <th onClick={() => toggleSort('id')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+              <th onClick={() => toggleSort('id')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Booking ID</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th onClick={() => toggleSort('customer')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+              <th onClick={() => toggleSort('customer')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Customer & Location</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th style={{ padding: '14px 18px' }}>Service Details</th>
-              <th style={{ padding: '14px 18px' }}>Assigned Worker</th>
-              <th onClick={() => toggleSort('amount')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Service Details</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Assigned Worker</th>
+              <th onClick={() => toggleSort('amount')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Amount</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th style={{ padding: '14px 18px' }}>Status</th>
-              <th style={{ padding: '14px 18px', textAlign: 'right' }}>Actions</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Status</th>
+              <th style={{ padding: '14px 18px', textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -337,6 +339,11 @@ export default function BookingsPage() {
                 </td>
                 <td style={{ padding: '14px 18px', fontWeight: '800', color: '#0f172a' }}>
                   {b.amount}
+                  {b.couponCode && (
+                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#15803d', marginTop: '2px' }}>
+                      {b.couponCode} −₹{b.couponDiscount || 0}
+                    </div>
+                  )}
                 </td>
                 <td style={{ padding: '14px 18px' }}>
                   <Badge status={b.status} />
@@ -450,6 +457,11 @@ export default function BookingsPage() {
               <div style={{ color: '#166534', marginTop: '2px' }}>
                 Amount: <strong>{selectedBookingForView.amount}</strong> ({selectedBookingForView.paymentStatus})
               </div>
+              {selectedBookingForView.couponCode && (
+                <div style={{ color: '#15803d', marginTop: '6px', fontWeight: '600' }}>
+                  Coupon {selectedBookingForView.couponCode}: −₹{selectedBookingForView.couponDiscount || 0}
+                </div>
+              )}
             </div>
 
             <div><strong>Customer:</strong> {selectedBookingForView.customer} ({selectedBookingForView.customerPhone})</div>

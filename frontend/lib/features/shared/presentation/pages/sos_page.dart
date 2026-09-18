@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../app/router/route_names.dart';
 import '../../../../app/theme/app_radius.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../core/utils/toast_utils.dart';
@@ -11,19 +12,23 @@ import '../../../worker/presentation/widgets/worker_sos_sheet.dart';
 import '../cubit/sos_cubit.dart';
 
 class SosPage extends StatelessWidget {
-  const SosPage({super.key});
+  const SosPage({super.key, this.activeBookingId});
+
+  final String? activeBookingId;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (context) => SosCubit()..loadContacts(),
-      child: const _SosPageView(),
+      child: _SosPageView(activeBookingId: activeBookingId),
     );
   }
 }
 
 class _SosPageView extends StatelessWidget {
-  const _SosPageView();
+  const _SosPageView({this.activeBookingId});
+
+  final String? activeBookingId;
 
   Future<void> _dialNumber(String number) async {
     final url = Uri.parse('tel:$number');
@@ -67,10 +72,21 @@ class _SosPageView extends StatelessWidget {
           if (state.error.isNotEmpty) {
             ToastUtils.showToast(context: context, message: state.error);
           }
+          if (state.successBookingId != null) {
+            ToastUtils.showToast(
+              context: context,
+              message: 'Emergency broadcast successful!',
+            );
+            context.go(
+              '${RouteNames.customerTracking}?bookingId=${state.successBookingId}',
+            );
+          }
         },
         builder: (context, state) {
           if (state.isLoadingContacts) {
-            return const Center(child: CircularProgressIndicator(color: Colors.red));
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.red),
+            );
           }
 
           if (state.isBroadcasting) {
@@ -82,10 +98,7 @@ class _SosPageView extends StatelessWidget {
             children: [
               const Text(
                 'Emergency Contacts',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               GridView.builder(
@@ -112,26 +125,34 @@ class _SosPageView extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
+                  color: Colors.red.shade700,
                   borderRadius: BorderRadius.circular(AppRadius.xl),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.red.withValues(alpha: 0.4),
                       blurRadius: 16,
                       offset: const Offset(0, 8),
-                    )
+                    ),
                   ],
                 ),
                 child: Column(
                   children: [
-                    const Icon(Icons.warning_amber_rounded, size: 48, color: Colors.white),
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      size: 48,
+                      color: Colors.white,
+                    ),
                     const SizedBox(height: 12),
                     Builder(
                       builder: (ctx) {
-                        final isWorker = ctx.watch<AppSessionCubit>().state.role == 'worker';
+                        final isWorker =
+                            ctx.watch<AppSessionCubit>().state.role == 'worker';
                         return Column(
                           children: [
                             Text(
-                              isWorker ? 'Worker Safety Support' : 'Need Immediate Help?',
+                              isWorker
+                                  ? 'Worker Safety Support'
+                                  : 'Need Immediate Help?',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 22,
@@ -141,27 +162,43 @@ class _SosPageView extends StatelessWidget {
                             const SizedBox(height: 8),
                             Text(
                               isWorker
-                                  ? 'Connect directly with the Federation Safety Response Cell or National Emergency 112.'
-                                  : 'Broadcast an emergency booking to all nearby workers. They will be alerted instantly.',
+                                  ? 'Helplines + in-job SOS alert to customer / federation.'
+                                  : 'Broadcast emergency booking. Platform SOS surcharge applies — not worker-set.',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white70, fontSize: 14),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
                             ),
                             const SizedBox(height: 20),
                             ElevatedButton(
                               onPressed: isWorker
-                                  ? () => WorkerSosSheet.show(context)
+                                  ? () => WorkerSosSheet.show(
+                                        context,
+                                        bookingId: activeBookingId,
+                                      )
                                   : () => _showBookingSheet(context),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: Colors.red,
-                                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(AppRadius.full),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.full,
+                                  ),
                                 ),
                               ),
                               child: Text(
-                                isWorker ? 'Open Worker Safety Helplines' : 'Create Emergency Booking',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                isWorker
+                                    ? 'Open Worker Safety Helplines'
+                                    : 'Create Emergency Booking',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -170,7 +207,7 @@ class _SosPageView extends StatelessWidget {
                     ),
                   ],
                 ),
-              )
+              ),
             ],
           );
         },
@@ -178,7 +215,12 @@ class _SosPageView extends StatelessWidget {
     );
   }
 
-  Widget _buildContactCard(BuildContext context, String title, String number, IconData icon) {
+  Widget _buildContactCard(
+    BuildContext context,
+    String title,
+    String number,
+    IconData icon,
+  ) {
     return AppCard(
       child: InkWell(
         onTap: () => _dialNumber(number),
@@ -193,12 +235,18 @@ class _SosPageView extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 number,
-                style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13),
+                style: TextStyle(
+                  color: Theme.of(context).hintColor,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -212,17 +260,15 @@ class _SosPageView extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          const CircularProgressIndicator(color: Colors.red),
           const SizedBox(height: 32),
           const Text(
             'Broadcasting Emergency...',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
           Text(
-            'Alerting all nearby professionals',
+            'Alerting nearby verified workers',
             style: TextStyle(color: Theme.of(context).hintColor),
           ),
         ],
@@ -239,82 +285,154 @@ class _EmergencyBookingSheet extends StatefulWidget {
 }
 
 class _EmergencyBookingSheetState extends State<_EmergencyBookingSheet> {
-  String _selectedCategory = 'Plumbing';
   final _descController = TextEditingController();
-  final _priceController = TextEditingController();
+  String? _serviceId;
 
-  final List<String> _categories = ['Plumbing', 'Electrical', 'Carpentry', 'Other'];
+  @override
+  void initState() {
+    super.initState();
+    final cubit = context.read<SosCubit>();
+    _serviceId = cubit.state.selectedServiceId;
+  }
 
-  void _submit() {
+  Future<void> _submit() async {
     final desc = _descController.text.trim();
-    final price = double.tryParse(_priceController.text) ?? 500.0;
+    final serviceId = _serviceId ?? context.read<SosCubit>().state.selectedServiceId;
     if (desc.isEmpty) {
-      ToastUtils.showToast(context: context, message: 'Please describe the issue');
+      ToastUtils.showToast(
+        context: context,
+        message: 'Please describe the issue',
+      );
       return;
     }
-    
-    context.read<SosCubit>().broadcastEmergencyBooking(_selectedCategory, desc, price).then((_) {
-      if (mounted) {
-        Navigator.pop(context);
-        ToastUtils.showToast(context: context, message: 'Emergency broadcast successful!');
-        context.pop(); // Close SOS page
-      }
-    });
+    if (serviceId == null || serviceId.isEmpty) {
+      ToastUtils.showToast(
+        context: context,
+        message: 'No service available. Try again later.',
+      );
+      return;
+    }
+
+    final ok = await context.read<SosCubit>().broadcastEmergencyBooking(
+          serviceId: serviceId,
+          description: desc,
+        );
+    if (ok && mounted) {
+      Navigator.pop(context);
+    }
   }
 
   @override
   void dispose() {
     _descController.dispose();
-    _priceController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Emergency Booking',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red),
+
+    return BlocBuilder<SosCubit, SosState>(
+      builder: (context, state) {
+        final services = state.services;
+        final selected = _serviceId ?? state.selectedServiceId;
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Emergency Booking',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'SOS surcharge set by platform settings, not by workers.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (services.isEmpty)
+                const Text('Loading services…')
+              else
+                DropdownButtonFormField<String>(
+                  value: selected != null &&
+                          services.any((s) => s.id == selected)
+                      ? selected
+                      : services.first.id,
+                  items: services
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s.id,
+                          child: Text(
+                            '${s.title} (₹${s.priceFrom.toStringAsFixed(0)})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _serviceId = v);
+                    context.read<SosCubit>().selectService(v);
+                  },
+                  decoration: const InputDecoration(labelText: 'Service'),
+                ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _descController,
+                decoration: const InputDecoration(
+                  labelText: 'Describe the emergency',
+                  hintText: 'Water pipe burst, short circuit...',
+                ),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 16),
+              if (state.isLoadingEstimate)
+                const LinearProgressIndicator(color: Colors.red)
+              else if (state.estimateTotalMin != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Est. total: ₹${state.estimateTotalMin!.toStringAsFixed(0)}'
+                        '${state.estimateTotalMax != null && state.estimateTotalMax != state.estimateTotalMin ? ' – ₹${state.estimateTotalMax!.toStringAsFixed(0)}' : ''}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (state.urgentFee != null && state.urgentFee! > 0)
+                        Text(
+                          'Includes SOS surcharge ₹${state.urgentFee!.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).hintColor,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: state.isBroadcasting ? 'Broadcasting…' : 'Broadcast Now',
+                onPressed: state.isBroadcasting ? null : _submit,
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _selectedCategory,
-            items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-            onChanged: (v) => setState(() => _selectedCategory = v!),
-            decoration: const InputDecoration(labelText: 'Category'),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _descController,
-            decoration: const InputDecoration(
-              labelText: 'Describe the emergency',
-              hintText: 'Water pipe burst, short circuit...',
-            ),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _priceController,
-            decoration: const InputDecoration(
-              labelText: 'Offer Price (₹)',
-              hintText: 'e.g. 1000',
-            ),
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 24),
-          PrimaryButton(
-            label: 'Broadcast Now',
-            onPressed: _submit,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

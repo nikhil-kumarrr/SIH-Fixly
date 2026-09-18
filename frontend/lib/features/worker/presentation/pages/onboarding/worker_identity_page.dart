@@ -22,6 +22,8 @@ import '../../cubit/worker_onboarding_cubit.dart';
 import 'worker_identity_photo_widgets.dart';
 import 'worker_onboarding_layout.dart';
 import '../../../../../core/utils/toast_utils.dart';
+import '../../../../../core/widgets/location_typeahead_field.dart';
+import '../../../../../core/constants/india_locations.dart';
 
 class WorkerIdentityPage extends StatefulWidget {
   const WorkerIdentityPage({super.key});
@@ -281,24 +283,47 @@ class _WorkerIdentityPageState extends State<WorkerIdentityPage> {
                                   ),
                         ),
                         const SizedBox(height: 16),
-                        AppTextField(
+                        LocationTypeAheadField(
                           controller: _stateController,
                           label: 'State',
-                          hint: 'e.g. Delhi',
-                          textCapitalization: TextCapitalization.words,
+                          hint: 'Type to search state',
                           validator: (v) =>
                               Validators.requiredField(v, label: 'State'),
+                          suggestionsFor: (query) async =>
+                              IndiaLocations.filterStates(query),
                           onChanged: cubit.updateState,
+                          onSelected: (state) {
+                            cubit.updateState(state);
+                            final districts =
+                                IndiaLocations.districtsFor(state);
+                            final current = _districtController.text.trim();
+                            final stillValid = districts.any(
+                              (d) =>
+                                  d.toLowerCase() == current.toLowerCase(),
+                            );
+                            if (!stillValid) {
+                              _districtController.clear();
+                              cubit.updateDistrict('');
+                            }
+                          },
                         ),
                         const SizedBox(height: 16),
-                        AppTextField(
+                        LocationTypeAheadField(
                           controller: _districtController,
                           label: 'District',
-                          hint: 'e.g. South Delhi',
-                          textCapitalization: TextCapitalization.words,
+                          hint: 'Type to search district',
                           validator: (v) =>
                               Validators.requiredField(v, label: 'District'),
+                          suggestionsFor: (query) async {
+                            final state = _stateController.text.trim();
+                            if (state.isEmpty) return const <String>[];
+                            return IndiaLocations.filterDistricts(
+                              state,
+                              query,
+                            );
+                          },
                           onChanged: cubit.updateDistrict,
+                          onSelected: cubit.updateDistrict,
                         ),
                       ],
                     ),

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useToast } from '../../context/ToastContext';
 import { api } from '../../services/api';
 import {
   ArrowLeft,
@@ -27,22 +28,262 @@ import {
   Eye,
   Camera,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ExternalLink,
+  CheckCircle,
+  Sparkles
 } from 'lucide-react';
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
 import Avatar from '../../components/common/Avatar';
+import { OFFICIAL_CATEGORIES, getMergedCategories } from '../../data/services';
+import StateDistrictSelect from '../../components/common/StateDistrictSelect';
+
+// Reusable Document Thumbnail with Preview & Zoom
+const DocumentCard = ({ title, url, inputKey, inputValue, onInputChange, isPdf }) => {
+  const [modalOpen, setModalOpen] = useState(false);
+  const isDocumentPdf = isPdf || (url && (/\.pdf($|\?)/i.test(url) || url.toLowerCase().includes('/raw/upload')));
+
+  return (
+    <div
+      style={{
+        backgroundColor: '#f8fafc',
+        padding: '16px',
+        borderRadius: '12px',
+        border: '1px solid #e2e8f0',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: '13px',
+            fontWeight: '700',
+            color: '#0f172a',
+            marginBottom: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {isDocumentPdf ? <FileText size={16} color="#0284c7" /> : <ImageIcon size={16} color="#15803d" />}
+            {title}
+          </span>
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                fontSize: '11.5px',
+                fontWeight: '700',
+                color: '#15803d',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <ExternalLink size={12} /> Open
+            </a>
+          )}
+        </div>
+
+        {url ? (
+          <div style={{ position: 'relative', marginBottom: '10px' }}>
+            {isDocumentPdf ? (
+              <div
+                style={{
+                  height: '140px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#475569',
+                  gap: '8px',
+                }}
+              >
+                <FileText size={32} color="#0284c7" />
+                <span style={{ fontSize: '12px', fontWeight: '600' }}>PDF Document Attached</span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  position: 'relative',
+                  cursor: 'pointer',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  border: '1px solid #cbd5e1',
+                }}
+                onClick={() => setModalOpen(true)}
+              >
+                <img
+                  src={url}
+                  alt={title}
+                  style={{
+                    width: '100%',
+                    height: '140px',
+                    objectFit: 'contain',
+                    backgroundColor: '#ffffff',
+                    display: 'block',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '6px',
+                    right: '6px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    color: '#ffffff',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <Eye size={12} /> Preview
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              backgroundColor: '#fff1f2',
+              border: '1px dashed #fda4af',
+              padding: '24px 16px',
+              borderRadius: '8px',
+              textAlign: 'center',
+              color: '#be123c',
+              fontSize: '12px',
+              marginBottom: '10px',
+            }}
+          >
+            <AlertTriangle size={20} color="#e11d48" style={{ margin: '0 auto 6px auto', display: 'block' }} />
+            <strong>{title} Not Uploaded</strong>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label
+          style={{
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#64748b',
+            display: 'block',
+            marginBottom: '4px',
+          }}
+        >
+          Image / Document URL
+        </label>
+        <input
+          type="text"
+          value={inputValue || ''}
+          onChange={(e) => onInputChange(inputKey, e.target.value)}
+          placeholder={`https://res.cloudinary.com/.../${inputKey}.jpg`}
+          style={{
+            width: '100%',
+            padding: '7px 10px',
+            borderRadius: '6px',
+            border: '1px solid #cbd5e1',
+            fontSize: '12px',
+            backgroundColor: '#ffffff',
+          }}
+        />
+      </div>
+
+      {/* Full Preview Modal */}
+      {modalOpen && (
+        <Modal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          title={`Document View: ${title}`}
+          maxWidth="700px"
+        >
+          <div style={{ textAlign: 'center', padding: '10px' }}>
+            <img
+              src={url}
+              alt={title}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '70vh',
+                borderRadius: '8px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+              }}
+            />
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  backgroundColor: '#15803d',
+                  color: '#ffffff',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                }}
+              >
+                <ExternalLink size={14} /> Open Original Full Resolution
+              </a>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#e2e8f0',
+                  color: '#334155',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
 
 export default function WorkerDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { workers, bookings, updateWorker } = useApp();
+  const { workers, bookings, updateWorker, verifyWorker, rejectWorker, services } = useApp();
+  const { showToast } = useToast();
 
   const [loadingWorker, setLoadingWorker] = useState(true);
   const [workerData, setWorkerData] = useState(null);
   const [workerBookings, setWorkerBookings] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [verifyingAction, setVerifyingAction] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const [declineText, setDeclineText] = useState('Documents unclear or incomplete. Please re-upload clear Aadhaar and PAN photos.');
   const [activeTab, setActiveTab] = useState('edit'); // 'edit', 'documents', 'financials', 'history'
+  const [isCustomTrade, setIsCustomTrade] = useState(false);
+  const [customTrade, setCustomTrade] = useState('');
+
+  const tradeOptions = React.useMemo(() => {
+    return getMergedCategories(services);
+  }, [services]);
 
   // Editable Form State
   const [formState, setFormState] = useState({
@@ -52,6 +293,9 @@ export default function WorkerDetailPage() {
     isVerified: false,
     category: 'Plumbing',
     hourlyRate: 500,
+    serviceRadiusKm: 15,
+    state: '',
+    district: '',
     experienceYears: 3,
     bio: '',
     skills: '',
@@ -59,12 +303,84 @@ export default function WorkerDetailPage() {
     totalEarnings: 0,
     totalJobs: 0,
     rating: 4.9,
+    // KYC Document fields
+    aadhaarNumber: '',
+    aadhaarFrontPhoto: '',
+    aadhaarBackPhoto: '',
+    panNumber: '',
+    panFrontPhoto: '',
+    panBackPhoto: '',
+    selfieImageUrl: '',
+    certificateUrl: '',
     govermentIdType: 'Aadhaar Card',
     govermentIdNumber: '',
     identityProofPhoto: '',
     identityFrontPhoto: '',
-    identityBackPhoto: ''
+    identityBackPhoto: '',
+    kycStatus: 'none',
+    livenessScore: null,
+    faceMatchScore: null,
+    documentFaceDetected: null,
+    selfieFaceDetected: null,
+    manualReviewReason: '',
+    declineReason: ''
   });
+
+  const populateWorkerFields = (w, backendBookings = []) => {
+    const kyc = w.kycDocuments || {};
+    const aadhaarFront = kyc.aadhaarFrontPhoto || w.workerProfile?.identityFrontPhoto || w.workerProfile?.identityProofPhoto || '';
+    const aadhaarBack = kyc.aadhaarBackPhoto || w.workerProfile?.identityBackPhoto || '';
+    const panFront = kyc.panFrontPhoto || '';
+    const panBack = kyc.panBackPhoto || '';
+    const selfie = kyc.selfieImageUrl || w.workerProfile?.selfieImageUrl || w.avatar || '';
+    const cert = kyc.certificateUrl || (Array.isArray(w.workerProfile?.certifications) ? w.workerProfile.certifications[0] : '') || '';
+    const aadhaarNum = kyc.aadhaarNumber || kyc.govermentIdNumber || w.workerProfile?.govermentIdNumber || '';
+    const panNum = kyc.panNumber || '';
+    const govIdType = kyc.govermentIdType || w.workerProfile?.govermentIdType || (aadhaarNum ? 'Aadhaar Card' : (panNum ? 'PAN Card' : 'Aadhaar Card'));
+    const govIdNum = kyc.govermentIdNumber || aadhaarNum || panNum || w.workerProfile?.govermentIdNumber || '';
+
+    setFormState({
+      name: w.name || '',
+      email: w.email || '',
+      phone: w.phone || '',
+      isVerified: Boolean(w.isVerified),
+      category: w.workerProfile?.category || w.service || 'Plumbing',
+      hourlyRate: w.workerProfile?.rate ?? w.workerProfile?.hourlyRate ?? 500,
+      serviceRadiusKm: w.workerProfile?.serviceRadiusKm ?? 15,
+      state: w.workerProfile?.state || w.savedAddresses?.[0]?.state || '',
+      district: w.workerProfile?.district || w.savedAddresses?.[0]?.city || '',
+      experienceYears: w.workerProfile?.experienceYears ?? 3,
+      bio: w.workerProfile?.bio || '',
+      skills: Array.isArray(w.workerProfile?.skills)
+        ? w.workerProfile.skills.join(', ')
+        : (w.skills ? w.skills.join(', ') : 'Plumbing, Installation'),
+      walletBalance: w.workerProfile?.walletBalance ?? 0,
+      totalEarnings: w.workerProfile?.totalEarnings ?? 0,
+      totalJobs: w.workerProfile?.totalJobs ?? backendBookings.length,
+      rating: w.workerProfile?.rating ?? 4.9,
+      // KYC Document fields
+      aadhaarNumber: aadhaarNum,
+      aadhaarFrontPhoto: aadhaarFront,
+      aadhaarBackPhoto: aadhaarBack,
+      panNumber: panNum,
+      panFrontPhoto: panFront,
+      panBackPhoto: panBack,
+      selfieImageUrl: selfie,
+      certificateUrl: cert,
+      govermentIdType: govIdType,
+      govermentIdNumber: govIdNum,
+      identityProofPhoto: aadhaarFront,
+      identityFrontPhoto: aadhaarFront,
+      identityBackPhoto: aadhaarBack,
+      kycStatus: kyc.status || (w.isVerified ? 'approved' : 'none'),
+      livenessScore: kyc.livenessScore,
+      faceMatchScore: kyc.faceMatchScore,
+      documentFaceDetected: kyc.documentFaceDetected,
+      selfieFaceDetected: kyc.selfieFaceDetected,
+      manualReviewReason: kyc.manualReviewReason || '',
+      declineReason: kyc.declineReason || ''
+    });
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -75,63 +391,18 @@ export default function WorkerDetailPage() {
         if (res.success && res.worker && isMounted) {
           const w = res.worker;
           setWorkerData(w);
-
-          // Format backend populated bookings
           const backendBookings = Array.isArray(res.bookings) ? res.bookings : [];
           setWorkerBookings(backendBookings);
-
-          setFormState({
-            name: w.name || '',
-            email: w.email || '',
-            phone: w.phone || '',
-            isVerified: Boolean(w.isVerified),
-            category: w.workerProfile?.category || w.service || 'Plumbing',
-            hourlyRate: w.workerProfile?.hourlyRate ?? 500,
-            experienceYears: w.workerProfile?.experienceYears ?? 3,
-            bio: w.workerProfile?.bio || '',
-            skills: Array.isArray(w.workerProfile?.skills)
-              ? w.workerProfile.skills.join(', ')
-              : (w.skills ? w.skills.join(', ') : 'Plumbing, Installation'),
-            walletBalance: w.workerProfile?.walletBalance ?? 0,
-            totalEarnings: w.workerProfile?.totalEarnings ?? 0,
-            totalJobs: w.workerProfile?.totalJobs ?? backendBookings.length,
-            rating: w.workerProfile?.rating ?? 4.9,
-            govermentIdType: w.workerProfile?.govermentIdType || 'Aadhaar Card',
-            govermentIdNumber: w.workerProfile?.govermentIdNumber || '9874-5612-8492',
-            identityProofPhoto: w.workerProfile?.identityProofPhoto || '',
-            identityFrontPhoto: w.workerProfile?.identityFrontPhoto || w.workerProfile?.identityProofPhoto || '',
-            identityBackPhoto: w.workerProfile?.identityBackPhoto || ''
-          });
+          populateWorkerFields(w, backendBookings);
         }
       } catch (err) {
         console.error('Error fetching worker details by ID:', err);
-        // Fallback to Context State
         const found = workers.find((w) => w.id === id || w.rawId === id || w._id === id);
         if (found && isMounted) {
           setWorkerData(found);
           const matchedBookings = bookings.filter((b) => b && (b.workerId === found._id || b.workerId === found.id || b.worker === found.name));
           setWorkerBookings(matchedBookings);
-
-          setFormState({
-            name: found.name || '',
-            email: found.email || '',
-            phone: found.phone || '',
-            isVerified: found.verification === 'Verified' || Boolean(found.isVerified),
-            category: found.service || found.category || 'Plumbing',
-            hourlyRate: 500,
-            experienceYears: 3,
-            bio: found.bio || '',
-            skills: Array.isArray(found.skills) ? found.skills.join(', ') : 'Plumbing, Leakage Repair',
-            walletBalance: 0,
-            totalEarnings: 0,
-            totalJobs: found.completedTasks || matchedBookings.length,
-            rating: found.rating || 4.9,
-            govermentIdType: 'Aadhaar Card',
-            govermentIdNumber: '9874-5612-8492',
-            identityProofPhoto: '',
-            identityFrontPhoto: '',
-            identityBackPhoto: ''
-          });
+          populateWorkerFields(found, matchedBookings);
         }
       } finally {
         if (isMounted) setLoadingWorker(false);
@@ -147,15 +418,71 @@ export default function WorkerDetailPage() {
   // Handle Quick ON/OFF Verification Toggle
   const handleToggleVerification = async () => {
     const newStatus = !formState.isVerified;
-    setFormState((prev) => ({ ...prev, isVerified: newStatus }));
+    setFormState((prev) => ({
+      ...prev,
+      isVerified: newStatus,
+      kycStatus: newStatus ? 'approved' : 'none'
+    }));
     try {
-      await updateWorker(id, {
-        isVerified: newStatus,
-        email: formState.email
-      });
+      if (newStatus) {
+        await verifyWorker(id);
+      } else {
+        await updateWorker(id, {
+          isVerified: false,
+          kycStatus: 'none',
+          email: formState.email
+        });
+      }
+      showToast('success', `Worker verification status updated to ${newStatus ? 'VERIFIED' : 'UNVERIFIED'}`);
     } catch (err) {
       setFormState((prev) => ({ ...prev, isVerified: !newStatus }));
+      showToast('error', 'Failed to update verification status');
     }
+  };
+
+  // Direct Approve from Documents Tab
+  const handleApproveKyc = async () => {
+    setVerifyingAction(true);
+    try {
+      await verifyWorker(id);
+      setFormState((prev) => ({
+        ...prev,
+        isVerified: true,
+        kycStatus: 'approved'
+      }));
+      showToast('success', 'Worker KYC approved and verified successfully!');
+    } catch (err) {
+      showToast('error', err.response?.data?.message || 'Failed to approve worker');
+    } finally {
+      setVerifyingAction(false);
+    }
+  };
+
+  // Direct Reject / Request Re-upload
+  const handleDeclineKyc = async () => {
+    setVerifyingAction(true);
+    try {
+      await rejectWorker(id, declineText);
+      setFormState((prev) => ({
+        ...prev,
+        isVerified: false,
+        kycStatus: 'rejected',
+        declineReason: declineText
+      }));
+      setDeclineOpen(false);
+      showToast('info', 'Worker KYC marked as declined / re-upload requested.');
+    } catch (err) {
+      showToast('error', err.response?.data?.message || 'Failed to reject worker');
+    } finally {
+      setVerifyingAction(false);
+    }
+  };
+
+  const handleDocumentFieldChange = (key, value) => {
+    setFormState((prev) => ({
+      ...prev,
+      [key]: value
+    }));
   };
 
   // Handle Profile Save
@@ -163,13 +490,17 @@ export default function WorkerDetailPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await updateWorker(id, {
+      const payload = {
         name: formState.name,
         email: formState.email,
         phone: formState.phone,
         isVerified: formState.isVerified,
         category: formState.category,
+        rate: Number(formState.hourlyRate),
         hourlyRate: Number(formState.hourlyRate),
+        serviceRadiusKm: Number(formState.serviceRadiusKm) || 15,
+        state: formState.state,
+        district: formState.district,
         experienceYears: Number(formState.experienceYears),
         bio: formState.bio,
         skills: formState.skills.split(',').map((s) => s.trim()).filter(Boolean),
@@ -177,17 +508,32 @@ export default function WorkerDetailPage() {
         totalEarnings: Number(formState.totalEarnings),
         totalJobs: Number(formState.totalJobs),
         rating: Number(formState.rating),
+        // Government & KYC Fields
         govermentIdType: formState.govermentIdType,
-        govermentIdNumber: formState.govermentIdNumber,
-        identityProofPhoto: formState.identityProofPhoto || formState.identityFrontPhoto,
-        identityFrontPhoto: formState.identityFrontPhoto,
-        identityBackPhoto: formState.identityBackPhoto
-      });
+        govermentIdNumber: formState.govermentIdNumber || formState.aadhaarNumber,
+        identityProofPhoto: formState.aadhaarFrontPhoto || formState.identityFrontPhoto,
+        identityFrontPhoto: formState.aadhaarFrontPhoto || formState.identityFrontPhoto,
+        identityBackPhoto: formState.aadhaarBackPhoto || formState.identityBackPhoto,
+        aadhaarNumber: formState.aadhaarNumber,
+        aadhaarFrontPhoto: formState.aadhaarFrontPhoto,
+        aadhaarBackPhoto: formState.aadhaarBackPhoto,
+        panNumber: formState.panNumber,
+        panFrontPhoto: formState.panFrontPhoto,
+        panBackPhoto: formState.panBackPhoto,
+        selfieImageUrl: formState.selfieImageUrl,
+        certificateUrl: formState.certificateUrl,
+        kycStatus: formState.kycStatus,
+        declineReason: formState.declineReason
+      };
+
+      const res = await updateWorker(id, payload);
       if (res && res.worker) {
         setWorkerData(res.worker);
       }
+      showToast('success', 'Worker profile & documents updated successfully!');
     } catch (err) {
       console.error('Save worker error:', err);
+      showToast('error', 'Failed to save worker modifications');
     } finally {
       setSaving(false);
     }
@@ -196,7 +542,17 @@ export default function WorkerDetailPage() {
   const currentWorker = workerData || {};
   const currentCategory = formState.category || 'Plumbing';
   const currentVerified = formState.isVerified;
-  const hasDocs = Boolean(formState.identityFrontPhoto || formState.identityProofPhoto);
+
+  const hasDocs = Boolean(
+    formState.aadhaarFrontPhoto ||
+    formState.aadhaarBackPhoto ||
+    formState.panFrontPhoto ||
+    formState.panBackPhoto ||
+    formState.selfieImageUrl ||
+    formState.certificateUrl ||
+    formState.identityFrontPhoto ||
+    formState.identityProofPhoto
+  );
 
   return (
     <div style={{ padding: '0 32px 32px 32px', animation: 'fadeIn 0.2s ease', maxWidth: '1100px' }}>
@@ -244,7 +600,7 @@ export default function WorkerDetailPage() {
         >
           <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
             <Avatar
-              src={formState.avatar || currentWorker.avatar}
+              src={formState.selfieImageUrl || formState.avatar || currentWorker.avatar}
               name={formState.name}
               size={80}
               border={`3.5px solid ${currentVerified ? '#15803d' : '#94a3b8'}`}
@@ -272,6 +628,11 @@ export default function WorkerDetailPage() {
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Mail size={13} /> {formState.email || 'worker@cooperative.org'}
                 </span>
+                {(formState.district || formState.state) && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0369a1', fontWeight: 600 }}>
+                    <MapPin size={13} /> {[formState.district, formState.state].filter(Boolean).join(', ')}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -411,36 +772,81 @@ export default function WorkerDetailPage() {
               Trade, Skills & Pricing Configuration
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
               <div>
-                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
-                  Primary Service Trade
-                </label>
-                <select
-                  value={formState.category}
-                  onChange={(e) => setFormState({ ...formState, category: e.target.value })}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#ffffff' }}
-                >
-                  <option value="Plumbing">Plumbing</option>
-                  <option value="Electrical">Electrical</option>
-                  <option value="Carpentry">Carpentry</option>
-                  <option value="Cleaning">Cleaning</option>
-                  <option value="AC Repair">AC Repair</option>
-                  <option value="Caregiving">Caregiving</option>
-                  <option value="Painting">Painting</option>
-                  <option value="Driving">Driving</option>
-                  <option value="General">General Trade</option>
-                </select>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>
+                    Primary Service Trade
+                  </label>
+                  {isCustomTrade ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomTrade(false)}
+                      style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      ← Standard List
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomTrade(true)}
+                      style={{ background: 'none', border: 'none', color: '#15803d', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      + Custom Trade
+                    </button>
+                  )}
+                </div>
+
+                {isCustomTrade ? (
+                  <input
+                    type="text"
+                    value={customTrade || formState.category}
+                    onChange={(e) => {
+                      setCustomTrade(e.target.value);
+                      setFormState({ ...formState, category: e.target.value });
+                    }}
+                    placeholder="e.g. Solar Panel Technician"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                  />
+                ) : (
+                  <select
+                    value={formState.category}
+                    onChange={(e) => setFormState({ ...formState, category: e.target.value })}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#ffffff' }}
+                  >
+                    {tradeOptions.map((trade) => (
+                      <option key={trade} value={trade}>
+                        {trade}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
-                  Hourly Benchmark Rate (₹/hr)
+                  Standard Hourly / Base Rate (₹)
                 </label>
                 <input
                   type="number"
+                  min="50"
+                  step="10"
                   value={formState.hourlyRate}
                   onChange={(e) => setFormState({ ...formState, hourlyRate: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
+                  Service Radius (km)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={formState.serviceRadiusKm}
+                  onChange={(e) => setFormState({ ...formState, serviceRadiusKm: e.target.value })}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                 />
               </div>
@@ -456,6 +862,19 @@ export default function WorkerDetailPage() {
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                 />
               </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <StateDistrictSelect
+                selectedState={formState.state}
+                selectedDistrict={formState.district}
+                onStateChange={(st) => setFormState({ ...formState, state: st, district: '' })}
+                onDistrictChange={(dist) => setFormState({ ...formState, district: dist })}
+                stateLabel="Home / Operating State"
+                districtLabel="Home / Operating District"
+                stateRequired={false}
+                districtRequired={false}
+              />
             </div>
 
             <div style={{ marginBottom: '16px' }}>
@@ -512,36 +931,158 @@ export default function WorkerDetailPage() {
         </form>
       )}
 
-      {/* TAB 2: IDENTITY DOCUMENT VERIFICATION (FRONT & BACK PHOTOS SUPPORT) */}
+      {/* TAB 2: IDENTITY DOCUMENT VERIFICATION (FULL AADHAAR, PAN, SELFIE & CERTIFICATES) */}
       {activeTab === 'documents' && (
         <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ backgroundColor: '#ffffff', padding: '22px', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            
+            {/* Header with Verification Status */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#111827' }}>
-                  Government Identity Proof & Multiple Documents Status
+                <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>
+                  Government Identity Proof & KYC Verification
                 </h3>
                 <p style={{ fontSize: '12.5px', color: '#64748b', marginTop: '2px' }}>
-                  Verify official ID proof uploaded by the worker (Aadhaar Card, PAN Card, Driving License - Front & Back Photos).
+                  Official documents uploaded by the worker (Aadhaar Card, PAN Card, Live Selfie, and Skill Certificates).
                 </p>
               </div>
 
-              <div
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: hasDocs ? '#eaf8ef' : '#fff1f2',
-                  color: hasDocs ? '#15803d' : '#e11d48',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  border: `1px solid ${hasDocs ? '#bbf7d0' : '#fecdd3'}`,
-                }}
-              >
-                {hasDocs ? '✅ Documents Uploaded' : '⚠️ Identity Proof Not Uploaded'}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: currentVerified ? '#eaf8ef' : (hasDocs ? '#fefce8' : '#fff1f2'),
+                    color: currentVerified ? '#15803d' : (hasDocs ? '#ca8a04' : '#e11d48'),
+                    fontSize: '12.5px',
+                    fontWeight: '700',
+                    border: `1px solid ${currentVerified ? '#bbf7d0' : (hasDocs ? '#fef08a' : '#fecdd3')}`,
+                  }}
+                >
+                  {currentVerified
+                    ? '✅ KYC Approved & Verified'
+                    : hasDocs
+                    ? '⏳ Documents Submitted'
+                    : '⚠️ Identity Proof Not Uploaded'}
+                </div>
+
+                {!currentVerified && hasDocs && (
+                  <button
+                    type="button"
+                    disabled={verifyingAction}
+                    onClick={handleApproveKyc}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '7px 16px',
+                      backgroundColor: '#15803d',
+                      color: '#ffffff',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <CheckCircle size={15} /> Approve KYC
+                  </button>
+                )}
+
+                {hasDocs && (
+                  <button
+                    type="button"
+                    disabled={verifyingAction}
+                    onClick={() => setDeclineOpen(true)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '7px 14px',
+                      backgroundColor: '#fff1f2',
+                      color: '#e11d48',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      border: '1px solid #fecdd3',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <XCircle size={15} /> Reject / Request Re-upload
+                  </button>
+                )}
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            {/* AI Fraud & Liveness Banner if Available */}
+            {(formState.livenessScore != null || formState.faceMatchScore != null || formState.manualReviewReason) && (
+              <div
+                style={{
+                  backgroundColor: formState.manualReviewReason ? '#fffbeb' : '#f0fdf4',
+                  border: `1px solid ${formState.manualReviewReason ? '#fef08a' : '#bbf7d0'}`,
+                  borderRadius: '12px',
+                  padding: '14px 18px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: formState.manualReviewReason ? '#854d0e' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={16} /> AI Biometric & Verification Scores
+                  </div>
+                  {formState.manualReviewReason && (
+                    <div style={{ fontSize: '12.5px', color: '#b45309', marginTop: '4px' }}>
+                      <strong>Review Note:</strong> {formState.manualReviewReason}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '16px', fontSize: '12.5px', color: '#334155' }}>
+                  {formState.livenessScore != null && (
+                    <div><strong>Liveness Score:</strong> {formState.livenessScore}</div>
+                  )}
+                  {formState.faceMatchScore != null && (
+                    <div><strong>Face Match:</strong> {formState.faceMatchScore}</div>
+                  )}
+                  {formState.documentFaceDetected != null && (
+                    <div><strong>Doc Face:</strong> {formState.documentFaceDetected ? '✅ Detected' : '❌ No Face'}</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Government ID Numbers Bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '22px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
+                  Aadhaar Card Number
+                </label>
+                <input
+                  type="text"
+                  value={formState.aadhaarNumber}
+                  onChange={(e) => setFormState({ ...formState, aadhaarNumber: e.target.value })}
+                  placeholder="e.g. 1234-5678-9123"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
+                  PAN Card Number
+                </label>
+                <input
+                  type="text"
+                  value={formState.panNumber}
+                  onChange={(e) => setFormState({ ...formState, panNumber: e.target.value })}
+                  placeholder="e.g. ABCDE1234F"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
                   Government ID Type
@@ -552,126 +1093,81 @@ export default function WorkerDetailPage() {
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#ffffff' }}
                 >
                   <option value="Aadhaar Card">Aadhaar Card</option>
-                  <option value="Driving License">Driving License</option>
                   <option value="PAN Card">PAN Card</option>
+                  <option value="Driving License">Driving License</option>
                   <option value="Voter ID">Voter ID</option>
                   <option value="Passport">Passport</option>
                 </select>
               </div>
-
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
-                  Government Unique ID Number
-                </label>
-                <input
-                  type="text"
-                  value={formState.govermentIdNumber}
-                  onChange={(e) => setFormState({ ...formState, govermentIdNumber: e.target.value })}
-                  placeholder="e.g. 9874-5612-8492 or ABCDE1234F"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                />
-              </div>
             </div>
 
-            {/* Front Photo & Back Photo Side-by-Side Cards */}
+            {/* Document Photo Cards Grid (2 columns on tablet/desktop) */}
             <div style={{ marginTop: '10px' }}>
-              <label style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '12px' }}>
-                Identity Proof Photos (Front Side & Back Side Preview)
-              </label>
+              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '14px' }}>
+                Uploaded Identity Proof & Certificate Documents (Front, Back & Selfie)
+              </h4>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                {/* Front Side Document Card */}
-                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <ImageIcon size={16} color="#15803d" />
-                    <span>Front Side Photo ({formState.govermentIdType})</span>
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: '18px' }}>
+                {/* 1. Aadhaar Card Front Photo */}
+                <DocumentCard
+                  title="Aadhaar Card (Front Side)"
+                  url={formState.aadhaarFrontPhoto || formState.identityFrontPhoto || formState.identityProofPhoto}
+                  inputKey="aadhaarFrontPhoto"
+                  inputValue={formState.aadhaarFrontPhoto || formState.identityFrontPhoto}
+                  onInputChange={handleDocumentFieldChange}
+                />
 
-                  {formState.identityFrontPhoto || formState.identityProofPhoto ? (
-                    <div>
-                      <img
-                        src={formState.identityFrontPhoto || formState.identityProofPhoto}
-                        alt="Front Side Doc"
-                        style={{ width: '100%', height: '140px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '8px' }}
-                      />
-                      <a
-                        href={formState.identityFrontPhoto || formState.identityProofPhoto}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: '12px', fontWeight: '700', color: '#2563eb', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <Eye size={14} /> <span>View Full Resolution Front Photo</span>
-                      </a>
-                    </div>
-                  ) : (
-                    <div style={{ backgroundColor: '#fff1f2', border: '1px dashed #fda4af', padding: '20px', borderRadius: '8px', textAlign: 'center', color: '#be123c', fontSize: '12px' }}>
-                      <AlertTriangle size={24} color="#e11d48" style={{ margin: '0 auto 4px auto', display: 'block' }} />
-                      <strong>Front Side Photo Not Uploaded</strong>
-                    </div>
-                  )}
+                {/* 2. Aadhaar Card Back Photo */}
+                <DocumentCard
+                  title="Aadhaar Card (Back Side)"
+                  url={formState.aadhaarBackPhoto || formState.identityBackPhoto}
+                  inputKey="aadhaarBackPhoto"
+                  inputValue={formState.aadhaarBackPhoto || formState.identityBackPhoto}
+                  onInputChange={handleDocumentFieldChange}
+                />
 
-                  <div style={{ marginTop: '12px' }}>
-                    <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>
-                      Front Photo Image URL
-                    </label>
-                    <input
-                      type="text"
-                      value={formState.identityFrontPhoto}
-                      onChange={(e) => setFormState({ ...formState, identityFrontPhoto: e.target.value })}
-                      placeholder="https://example.com/aadhaar-front.jpg"
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
-                    />
-                  </div>
-                </div>
+                {/* 3. PAN Card Front Photo */}
+                <DocumentCard
+                  title="PAN Card (Front Side)"
+                  url={formState.panFrontPhoto}
+                  inputKey="panFrontPhoto"
+                  inputValue={formState.panFrontPhoto}
+                  onInputChange={handleDocumentFieldChange}
+                />
 
-                {/* Back Side Document Card */}
-                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <ImageIcon size={16} color="#15803d" />
-                    <span>Back Side Photo ({formState.govermentIdType})</span>
-                  </div>
+                {/* 4. PAN Card Back Photo */}
+                <DocumentCard
+                  title="PAN Card (Back Side)"
+                  url={formState.panBackPhoto}
+                  inputKey="panBackPhoto"
+                  inputValue={formState.panBackPhoto}
+                  onInputChange={handleDocumentFieldChange}
+                />
 
-                  {formState.identityBackPhoto ? (
-                    <div>
-                      <img
-                        src={formState.identityBackPhoto}
-                        alt="Back Side Doc"
-                        style={{ width: '100%', height: '140px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '8px' }}
-                      />
-                      <a
-                        href={formState.identityBackPhoto}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: '12px', fontWeight: '700', color: '#2563eb', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <Eye size={14} /> <span>View Full Resolution Back Photo</span>
-                      </a>
-                    </div>
-                  ) : (
-                    <div style={{ backgroundColor: '#fff1f2', border: '1px dashed #fda4af', padding: '20px', borderRadius: '8px', textAlign: 'center', color: '#be123c', fontSize: '12px' }}>
-                      <AlertTriangle size={24} color="#e11d48" style={{ margin: '0 auto 4px auto', display: 'block' }} />
-                      <strong>Back Side Photo Not Uploaded</strong>
-                    </div>
-                  )}
+                {/* 5. Live Worker Selfie */}
+                <DocumentCard
+                  title="Worker Live Selfie / Photo"
+                  url={formState.selfieImageUrl || formState.avatar || currentWorker.avatar}
+                  inputKey="selfieImageUrl"
+                  inputValue={formState.selfieImageUrl}
+                  onInputChange={handleDocumentFieldChange}
+                />
 
-                  <div style={{ marginTop: '12px' }}>
-                    <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>
-                      Back Photo Image URL
-                    </label>
-                    <input
-                      type="text"
-                      value={formState.identityBackPhoto}
-                      onChange={(e) => setFormState({ ...formState, identityBackPhoto: e.target.value })}
-                      placeholder="https://example.com/aadhaar-back.jpg"
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
-                    />
-                  </div>
-                </div>
+                {/* 6. Skill Certificate / PDF Proof */}
+                <DocumentCard
+                  title="Skill / Trade Certificate (PDF or Image)"
+                  url={formState.certificateUrl}
+                  inputKey="certificateUrl"
+                  inputValue={formState.certificateUrl}
+                  onInputChange={handleDocumentFieldChange}
+                  isPdf={true}
+                />
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          {/* Action Bar */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
             <button
               type="submit"
               disabled={saving}
@@ -687,6 +1183,7 @@ export default function WorkerDetailPage() {
                 fontWeight: '700',
                 border: 'none',
                 cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(21, 128, 61, 0.25)',
               }}
             >
               <Save size={16} />
@@ -694,6 +1191,73 @@ export default function WorkerDetailPage() {
             </button>
           </div>
         </form>
+      )}
+
+      {/* Decline / Re-upload Modal */}
+      {declineOpen && (
+        <Modal
+          isOpen={declineOpen}
+          onClose={() => setDeclineOpen(false)}
+          title="Reject / Request KYC Re-upload"
+          maxWidth="550px"
+        >
+          <div>
+            <p style={{ fontSize: '13px', color: '#475569', marginBottom: '12px' }}>
+              Specify the reason for rejection or re-upload request. This message will be shown directly on the worker's mobile verification screen:
+            </p>
+
+            <textarea
+              value={declineText}
+              onChange={(e) => setDeclineText(e.target.value)}
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                fontSize: '13px',
+                fontFamily: 'inherit',
+                marginBottom: '16px',
+              }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setDeclineOpen(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#f1f5f9',
+                  color: '#475569',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={verifyingAction}
+                onClick={handleDeclineKyc}
+                style={{
+                  padding: '8px 18px',
+                  backgroundColor: '#e11d48',
+                  color: '#ffffff',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                {verifyingAction ? 'Declining...' : 'Submit Decline'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* TAB 3: FINANCIALS & WALLET */}

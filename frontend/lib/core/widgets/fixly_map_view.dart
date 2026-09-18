@@ -31,6 +31,7 @@ class FixlyMapView extends StatefulWidget {
     this.routeStart,
     this.workerPosition,
     this.followWorker = false,
+    this.cameraFollowMinIntervalMs = 0,
     this.routeCoordinates = const [],
     this.workerHeading,
     this.claimGestures = false,
@@ -70,6 +71,10 @@ class FixlyMapView extends StatefulWidget {
 
   /// Automatically keep camera centered on moving worker.
   final bool followWorker;
+
+  /// Min ms between follow-camera eases (0 = every move). Customer tracking
+  /// uses ~450 to avoid overlapping easeTo thrash that looks like reverse.
+  final int cameraFollowMinIntervalMs;
 
   final List<MapCoordinate> routeCoordinates;
   final double? workerHeading;
@@ -149,6 +154,7 @@ class _FixlyMapViewState extends State<FixlyMapView> {
   bool _is3D = false;
   bool _isNavigating = false;
   CameraViewportState? _initialViewport;
+  DateTime? _lastCameraFollowAt;
 
   @override
   void initState() {
@@ -229,8 +235,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
     _startImage = await _loadAsset('assets/icons/start.png');
-    _destinationMarkerImage =
-        await _createDestinationMarkerImage(isCustomerView: widget.isCustomerView);
+    _destinationMarkerImage = await _createDestinationMarkerImage(
+      isCustomerView: widget.isCustomerView,
+    );
     _bikeImage = await _loadAsset('assets/icons/bike_marker.png');
     _userLocationImage = await _createUserLocationPuckImage();
 
@@ -243,7 +250,7 @@ class _FixlyMapViewState extends State<FixlyMapView> {
         debugPrint('FixlyMapView locationComponent error: $e');
       }
     }
-    
+
     try {
       await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
       await mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
@@ -271,17 +278,25 @@ class _FixlyMapViewState extends State<FixlyMapView> {
     // Safe resilient annotation manager initialization
     Future<void> initManagers() async {
       try {
-        _polylineManager ??= await mapboxMap.annotations.createPolylineAnnotationManager();
+        _polylineManager ??= await mapboxMap.annotations
+            .createPolylineAnnotationManager();
       } catch (e) {
         debugPrint('FixlyMapView polylineManager init: $e');
       }
       try {
-        _polygonManager ??= await mapboxMap.annotations.createPolygonAnnotationManager();
+        _polygonManager ??= await mapboxMap.annotations
+            .createPolygonAnnotationManager();
       } catch (e) {
         debugPrint('FixlyMapView polygonManager init: $e');
       }
       try {
-        _pointManager ??= await mapboxMap.annotations.createPointAnnotationManager();
+        _pointManager ??= await mapboxMap.annotations
+            .createPointAnnotationManager();
+        // iconRotate relative to map north (not viewport) so 3D camera bearing
+        // does not double-rotate the bike.
+        await _pointManager?.setIconRotationAlignment(
+          IconRotationAlignment.MAP,
+        );
       } catch (e) {
         debugPrint('FixlyMapView pointManager init: $e');
       }
@@ -313,7 +328,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
     }
   }
 
-  Future<Uint8List> _createDestinationMarkerImage({bool isCustomerView = true}) async {
+  Future<Uint8List> _createDestinationMarkerImage({
+    bool isCustomerView = true,
+  }) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     const double width = 64.0;
@@ -359,7 +376,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
 
     // Customer view: Primary Blue ("Your Location")
     // Worker view: Accent Coral/Red-Orange ("Destination")
-    final pinColor = isCustomerView ? const Color(0xFF2563EB) : const Color(0xFFEA580C);
+    final pinColor = isCustomerView
+        ? const Color(0xFF2563EB)
+        : const Color(0xFFEA580C);
     final pinPaint = Paint()
       ..color = pinColor
       ..style = PaintingStyle.fill;
@@ -379,7 +398,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
     canvas.drawCircle(const Offset(width / 2, 28), 10, innerDiscPaint);
 
     // Inner Focal Dot
-    final innerDotColor = isCustomerView ? const Color(0xFF1D4ED8) : const Color(0xFFC2410C);
+    final innerDotColor = isCustomerView
+        ? const Color(0xFF1D4ED8)
+        : const Color(0xFFC2410C);
     final innerDotPaint = Paint()
       ..color = innerDotColor
       ..style = PaintingStyle.fill;
@@ -510,17 +531,22 @@ class _FixlyMapViewState extends State<FixlyMapView> {
 
   Future<void> _recenter() async {
     final mapboxMap = _mapboxMap;
-    final target = widget.workerPosition ?? widget.center ?? MapConstants.current;
+    final target =
+        widget.workerPosition ?? widget.center ?? MapConstants.current;
     if (mapboxMap == null || target == null) return;
     try {
       final camera = await mapboxMap.getCameraState();
       final heading = widget.workerHeading ?? target.heading ?? 0.0;
+      final lookAhead = _lookAheadMeters(camera.zoom, navigating: _isNavigating);
+      final center = (_isNavigating && heading != 0.0)
+          ? _calculateLookAheadCoordinate(target, heading, lookAhead)
+          : target;
       await mapboxMap.easeTo(
         CameraOptions(
-          center: Point(coordinates: Position(target.lng, target.lat)),
-          zoom: _isNavigating ? 17.8 : widget.zoom,
+          center: Point(coordinates: Position(center.lng, center.lat)),
+          // Keep worker's chosen zoom; only nudge pitch/bearing for nav.
           pitch: _isNavigating ? 58.0 : (_is3D ? 60.0 : camera.pitch),
-          bearing: _isNavigating ? heading : 0.0,
+          bearing: _isNavigating ? heading : camera.bearing,
         ),
         MapAnimationOptions(duration: 400),
       );
@@ -538,7 +564,8 @@ class _FixlyMapViewState extends State<FixlyMapView> {
       final targetPitch = isCurrently3D ? 0.0 : 60.0;
       final next3D = !isCurrently3D;
 
-      final heading = widget.workerHeading ??
+      final heading =
+          widget.workerHeading ??
           widget.workerPosition?.heading ??
           camera.bearing;
 
@@ -599,6 +626,22 @@ class _FixlyMapViewState extends State<FixlyMapView> {
     }
   }
 
+  /// Bike faces travel direction along the blue route when available.
+  double _bikeRotation(MapCoordinate worker) {
+    final along = TrackingHelpers.headingAlongRoute(
+      worker,
+      widget.routeCoordinates,
+    );
+    if (along != null) return along;
+    return TrackingHelpers.normalizeHeading(
+      widget.workerHeading ??
+          worker.heading ??
+          (widget.routeEnd != null
+              ? NavigationMath.bearingDegrees(worker, widget.routeEnd!)
+              : 0.0),
+    );
+  }
+
   MapCoordinate _calculateLookAheadCoordinate(
     MapCoordinate pos,
     double headingDegrees,
@@ -606,10 +649,14 @@ class _FixlyMapViewState extends State<FixlyMapView> {
   ) {
     const earthRadius = 6371000.0;
     final rad = headingDegrees * math.pi / 180.0;
-    final dLat = (distanceMeters * math.cos(rad)) / earthRadius * (180.0 / math.pi);
+    final dLat =
+        (distanceMeters * math.cos(rad)) / earthRadius * (180.0 / math.pi);
     final cosLat = math.cos(pos.lat * math.pi / 180.0);
     final safeCos = cosLat.abs() < 0.001 ? 0.001 : cosLat;
-    final dLng = (distanceMeters * math.sin(rad)) / (earthRadius * safeCos) * (180.0 / math.pi);
+    final dLng =
+        (distanceMeters * math.sin(rad)) /
+        (earthRadius * safeCos) *
+        (180.0 / math.pi);
     return MapCoordinate(
       lat: (pos.lat + dLat).clamp(-85.0, 85.0),
       lng: ((pos.lng + dLng + 180.0) % 360.0) - 180.0,
@@ -623,10 +670,7 @@ class _FixlyMapViewState extends State<FixlyMapView> {
 
     // Immediately update live worker pin geometry & rotation
     if (_workerMarker != null && _pointManager != null) {
-      final rotation = widget.workerHeading ??
-          worker.heading ??
-          _workerMarker!.iconRotate ??
-          0.0;
+      final rotation = _bikeRotation(worker);
       try {
         _workerMarker!
           ..geometry = Point(coordinates: Position(worker.lng, worker.lat))
@@ -643,41 +687,62 @@ class _FixlyMapViewState extends State<FixlyMapView> {
       final camera = await map.getCameraState();
       final currentZoom = camera.zoom;
 
-      // Auto-move camera only when zoomed in (zoom >= 14.5) or in active navigation
-      // If zoomed out, respect user's overview perspective and do not pull camera
-      final isZoomedIn = currentZoom >= _zoomFollowThreshold || _isNavigating;
-      if (!isZoomedIn && !widget.followWorker) {
+      // Follow at any zoom when navigating / followWorker — never force zoom.
+      if (!widget.followWorker &&
+          !_isNavigating &&
+          currentZoom < _zoomFollowThreshold) {
         return;
+      }
+
+      final minInterval = widget.cameraFollowMinIntervalMs;
+      if (minInterval > 0) {
+        final now = DateTime.now();
+        final last = _lastCameraFollowAt;
+        if (last != null &&
+            now.difference(last).inMilliseconds < minInterval) {
+          return;
+        }
+        _lastCameraFollowAt = now;
       }
 
       final heading = widget.workerHeading ?? worker.heading ?? camera.bearing;
       final targetPitch = _isNavigating ? 58.0 : (_is3D ? 60.0 : camera.pitch);
       final targetBearing = _isNavigating ? heading : camera.bearing;
+      final lookAhead = _lookAheadMeters(currentZoom, navigating: _isNavigating);
 
-      // Offset camera forward in heading direction so oncoming roads are clear
+      // Offset camera forward so worker sees road ahead at their chosen zoom.
       final targetCoord = (targetPitch > 20.0 && heading != 0.0)
-          ? _calculateLookAheadCoordinate(worker, heading, _isNavigating ? 45.0 : 28.0)
+          ? _calculateLookAheadCoordinate(worker, heading, lookAhead)
           : worker;
 
+      // Omit zoom — preserve whatever worker set with pinch / +/- buttons.
       await map.easeTo(
         CameraOptions(
-          center: Point(coordinates: Position(targetCoord.lng, targetCoord.lat)),
-          zoom: _isNavigating ? math.max(currentZoom, 17.5) : currentZoom,
+          center: Point(
+            coordinates: Position(targetCoord.lng, targetCoord.lat),
+          ),
           pitch: targetPitch,
           bearing: targetBearing,
         ),
-        MapAnimationOptions(duration: 400),
+        MapAnimationOptions(duration: minInterval > 0 ? minInterval : 400),
       );
     } catch (e) {
       debugPrint('FixlyMapView _onWorkerMoved camera error: $e');
     }
   }
 
+  /// Look-ahead grows when zoomed in so forward road stays on screen.
+  double _lookAheadMeters(double zoom, {required bool navigating}) {
+    if (!navigating) return 28.0;
+    return (45.0 * math.pow(2, zoom - 17.5)).clamp(25.0, 200.0).toDouble();
+  }
+
   Future<void> _startNavigation() async {
     final map = _mapboxMap;
     if (map == null || _isDisposed) return;
 
-    final targetWorker = widget.workerPosition ??
+    final targetWorker =
+        widget.workerPosition ??
         widget.routeStart ??
         widget.center ??
         MapConstants.current;
@@ -690,7 +755,8 @@ class _FixlyMapViewState extends State<FixlyMapView> {
     widget.onNavigationChanged?.call(true);
 
     try {
-      final heading = widget.workerHeading ??
+      final heading =
+          widget.workerHeading ??
           targetWorker.heading ??
           (widget.routeEnd != null
               ? NavigationMath.bearingDegrees(targetWorker, widget.routeEnd!)
@@ -705,7 +771,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
 
       await map.easeTo(
         CameraOptions(
-          center: Point(coordinates: Position(targetCoord.lng, targetCoord.lat)),
+          center: Point(
+            coordinates: Position(targetCoord.lng, targetCoord.lat),
+          ),
           zoom: targetZoom,
           pitch: targetPitch,
           bearing: heading,
@@ -738,7 +806,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
 
     final totalDist = TrackingHelpers.distanceMeters(worker, destination);
     final distStr = TrackingHelpers.formatDistance(totalDist);
-    final etaStr = TrackingHelpers.formatEta(TrackingHelpers.estimateEtaMinutes(totalDist));
+    final etaStr = TrackingHelpers.formatEta(
+      TrackingHelpers.estimateEtaMinutes(totalDist),
+    );
 
     if (totalDist <= 35.0) {
       return _ManeuverInfo(
@@ -771,9 +841,15 @@ class _FixlyMapViewState extends State<FixlyMapView> {
         if (diff < -180.0) diff += 360.0;
 
         if (diff.abs() >= 20.0) {
-          double distToTurn = TrackingHelpers.distanceMeters(worker, coords[closestIdx]);
+          double distToTurn = TrackingHelpers.distanceMeters(
+            worker,
+            coords[closestIdx],
+          );
           for (int j = closestIdx; j < i; j++) {
-            distToTurn += TrackingHelpers.distanceMeters(coords[j], coords[j + 1]);
+            distToTurn += TrackingHelpers.distanceMeters(
+              coords[j],
+              coords[j + 1],
+            );
           }
 
           final IconData turnIcon;
@@ -792,7 +868,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
             turnName = 'Slight left';
           }
 
-          final formattedDistToTurn = TrackingHelpers.formatDistance(distToTurn);
+          final formattedDistToTurn = TrackingHelpers.formatDistance(
+            distToTurn,
+          );
           return _ManeuverInfo(
             icon: turnIcon,
             title: 'In $formattedDistToTurn, $turnName',
@@ -805,7 +883,8 @@ class _FixlyMapViewState extends State<FixlyMapView> {
 
     return _ManeuverInfo(
       icon: Icons.straight_rounded,
-      title: 'Head toward ${widget.isCustomerView ? "Your Location" : "Destination"}',
+      title:
+          'Head toward ${widget.isCustomerView ? "Your Location" : "Destination"}',
       subtitle: '$distStr • $etaStr',
       distanceToManeuver: totalDist,
     );
@@ -909,14 +988,16 @@ class _FixlyMapViewState extends State<FixlyMapView> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.16),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.navigation_rounded, color: Color(0xFF38BDF8), size: 18),
+              Icon(
+                Icons.navigation_rounded,
+                color: Color(0xFF38BDF8),
+                size: 18,
+              ),
               SizedBox(width: 8),
               Text(
                 'Start Navigation',
@@ -1006,11 +1087,8 @@ class _FixlyMapViewState extends State<FixlyMapView> {
         _areaPolygon = null;
       }
 
-      if (widget.routeEnd != null &&
-          (widget.routeCoordinates.length >= 2 || start != null)) {
-        final coordinates = widget.routeCoordinates.length >= 2
-            ? widget.routeCoordinates
-            : [start ?? worker ?? destination, widget.routeEnd!];
+      if (widget.routeCoordinates.length >= 2) {
+        final coordinates = widget.routeCoordinates;
         final route = LineString(
           coordinates: coordinates
               .map((coordinate) => Position(coordinate.lng, coordinate.lat))
@@ -1177,12 +1255,7 @@ class _FixlyMapViewState extends State<FixlyMapView> {
       }
 
       if (worker != null) {
-        final rotation =
-            widget.workerHeading ??
-            worker.heading ??
-            (start != null && widget.routeEnd != null
-                ? NavigationMath.bikeIconRotation(start, widget.routeEnd!)
-                : 0.0);
+        final rotation = _bikeRotation(worker);
 
         final String workerLabel;
         if (widget.isCustomerView) {
@@ -1323,6 +1396,7 @@ class _FixlyMapViewState extends State<FixlyMapView> {
         ? MapWidget(
             key: const ValueKey('fixly-map-canvas'),
             styleUri: MapboxStyles.STANDARD,
+            
             textureView: true,
             gestureRecognizers: widget.claimGestures
                 ? <Factory<OneSequenceGestureRecognizer>>{
@@ -1367,37 +1441,14 @@ class _FixlyMapViewState extends State<FixlyMapView> {
             _destinationMarker == null &&
             _mapError == null &&
             MapConstants.hasToken)
-          IgnorePointer(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 28),
-                child: Icon(
-                  Icons.location_on_rounded,
-                  size: 48,
-                  color: AppColors.accent,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
+          // Turn-by-Turn Guidance HUD when active
+          if (_isNavigating && MapConstants.hasToken && _mapError == null)
+            Positioned(
+              top: 10,
+              left: 10,
+              right: 10,
+              child: SafeArea(bottom: false, child: _buildNavigationHUD()),
             ),
-          ),
-
-        // Turn-by-Turn Guidance HUD when active
-        if (_isNavigating && MapConstants.hasToken && _mapError == null)
-          Positioned(
-            top: 10,
-            left: 10,
-            right: 10,
-            child: SafeArea(
-              bottom: false,
-              child: _buildNavigationHUD(),
-            ),
-          ),
 
         // Start Navigation Floating Pill Button
         if (widget.showNavigationOption &&
@@ -1407,7 +1458,9 @@ class _FixlyMapViewState extends State<FixlyMapView> {
             _mapError == null)
           Positioned(
             left: 12,
-            bottom: widget.showMovementControls ? null : widget.controlsBottomPadding,
+            bottom: widget.showMovementControls
+                ? null
+                : widget.controlsBottomPadding,
             top: widget.showMovementControls ? 12 : null,
             child: SafeArea(
               bottom: false,

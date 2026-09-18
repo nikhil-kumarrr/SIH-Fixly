@@ -10,8 +10,7 @@ if (file("google-services.json").exists()) {
 
 android {
     namespace = "com.example.fixly"
-    // flutter_secure_storage requires compileSdk 37+
-    compileSdk = maxOf(flutter.compileSdkVersion, 37)
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -36,6 +35,10 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

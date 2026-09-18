@@ -3,10 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../services/webrtc_call_service.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/map_constants.dart';
+import '../../../../core/utils/rating_format.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/utils/tracking_helpers.dart';
 import '../../../../core/widgets/fixly_map_view.dart';
@@ -26,6 +28,7 @@ class CustomerTrackingPage extends StatefulWidget {
 
 class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
   bool _followWorker = true;
+  bool _leftForBookingDetail = false;
 
   @override
   void initState() {
@@ -106,19 +109,43 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
           BlocListener<BookingFlowCubit, BookingFlowState>(
             listenWhen: (previous, current) =>
                 previous.step != current.step ||
+                previous.booking?.rawStatus != current.booking?.rawStatus ||
                 previous.booking?.paymentStatus != current.booking?.paymentStatus,
             listener: (context, state) {
-              if (state.step == BookingStatus.paid || state.booking?.paymentStatus == 'PAID') {
-                context.push(RouteNames.customerRating);
-              } else if (state.step == BookingStatus.inProgress) {
-                // Return to booking details where job progress is shown
-                context.pop();
-              } else if (state.step == BookingStatus.arrived) {
+              if (state.step == BookingStatus.paid ||
+                  state.booking?.paymentStatus == 'PAID') {
+                final id = state.booking?.id ?? widget.bookingId;
+                if (id != null && id.isNotEmpty) {
+                  context.goRefreshing(RouteNames.customerRatingPath(id));
+                } else {
+                  context.goRefreshing(RouteNames.customerRating);
+                }
+                return;
+              }
+
+              final raw = (state.booking?.rawStatus ?? '').toUpperCase();
+              final arrivedOrWorking = state.step == BookingStatus.arrived ||
+                  state.step == BookingStatus.inProgress ||
+                  raw == 'ARRIVED' ||
+                  raw == 'IN_PROGRESS' ||
+                  raw == 'READY_TO_START' ||
+                  raw == 'ESTIMATION_GIVEN' ||
+                  raw == 'ESTIMATION_SUBMITTED';
+
+              if (!arrivedOrWorking) return;
+
+              final id = state.booking?.id ?? widget.bookingId;
+              if (id == null || id.isEmpty || _leftForBookingDetail) return;
+              _leftForBookingDetail = true;
+
+              if (state.step == BookingStatus.arrived || raw == 'ARRIVED') {
                 ToastUtils.showToast(
                   context: context,
-                  message: 'Worker arrived! Share OTP to start.',
+                  message: 'Arrival verified — opening booking details.',
                 );
               }
+
+              context.goRefreshing(RouteNames.bookingDetailPath(id));
             },
           ),
         ],
@@ -151,6 +178,7 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                     workerHeading: state.workerHeading,
                     routeCoordinates: state.routeCoordinates,
                     followWorker: _followWorker,
+                    cameraFollowMinIntervalMs: 450,
                     claimGestures: true,
                     showZoomControls: true,
                     showRecenterButton: true,
@@ -182,7 +210,7 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                                 if (from == 'notifications') {
                                   context.go(RouteNames.sharedNotifications);
                                 } else {
-                                  context.go(RouteNames.customerHome);
+                                  context.goRefreshing(RouteNames.customerHome);
                                 }
                               }
                             },
@@ -309,46 +337,60 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
 
                           // ETA & Distance Banner
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    etaStr,
-                                    style: theme.textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.primary,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      etaStr,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.primary,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '$distStr away • ${state.phaseLabelFor(l10n.locale)}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey[600],
-                                      fontWeight: FontWeight.w500,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '$distStr away • ${state.phaseLabelFor(l10n.locale)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.grey[600],
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: state.phase == TrackingPhase.arrived
-                                      ? const Color(0xFFD1FAE5)
-                                      : const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(12),
+                                  ],
                                 ),
-                                child: Text(
-                                  state.phase == TrackingPhase.arrived
-                                      ? 'ARRIVED'
-                                      : 'ON THE WAY',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
                                     color: state.phase == TrackingPhase.arrived
-                                        ? const Color(0xFF065F46)
-                                        : AppColors.primary,
+                                        ? const Color(0xFFD1FAE5)
+                                        : const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    state.phase == TrackingPhase.arrived
+                                        ? 'ARRIVED'
+                                        : 'ON THE WAY',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: state.phase == TrackingPhase.arrived
+                                          ? const Color(0xFF065F46)
+                                          : AppColors.primary,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -378,6 +420,8 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                                     children: [
                                       Text(
                                         state.workerName ?? 'Assigned Professional',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: theme.textTheme.titleMedium?.copyWith(
                                           fontWeight: FontWeight.w700,
                                         ),
@@ -385,16 +429,29 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                                       const SizedBox(height: 2),
                                       Row(
                                         children: [
-                                          const Icon(Icons.star_rounded, size: 16, color: Color(0xFFF59E0B)),
+                                          const Icon(
+                                            Icons.star_rounded,
+                                            size: 16,
+                                            color: Color(0xFFF59E0B),
+                                          ),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            '${state.workerRating ?? 4.8} rating',
-                                            style: theme.textTheme.bodySmall?.copyWith(
-                                              fontWeight: FontWeight.w600,
+                                          Expanded(
+                                            child: Text(
+                                              [
+                                                if (state.workerRating != null &&
+                                                    state.workerRating! > 0)
+                                                  '${formatRating(state.workerRating)} rating'
+                                                else
+                                                  'New · no ratings yet',
+                                                'Bike en route',
+                                              ].join(' • '),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.bodySmall?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                           ),
-                                          const SizedBox(width: 8),
-                                          Text('• Bike en route', style: theme.textTheme.bodySmall),
                                         ],
                                       ),
                                     ],
@@ -422,28 +479,32 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                               border: Border.all(color: const Color(0xFFFDE68A)),
                             ),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Start Service OTP',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF92400E),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Start Service OTP',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF92400E),
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      'Share with worker on arrival',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFFB45309),
+                                      Text(
+                                        'Share with worker on arrival',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFFB45309),
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                                   decoration: BoxDecoration(
@@ -564,7 +625,14 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 minimumSize: const Size(double.infinity, 48),
                               ),
-                              onPressed: () => context.push(RouteNames.customerRating),
+                              onPressed: () {
+                                final id = booking?.id ?? widget.bookingId;
+                                if (id != null && id.isNotEmpty) {
+                                  context.goRefreshing(RouteNames.customerRatingPath(id));
+                                } else {
+                                  context.goRefreshing(RouteNames.customerRating);
+                                }
+                              },
                               child: const Text('Rate & Review Specialist', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                             ),
                           ] else if (isAwaitingPayment) ...[

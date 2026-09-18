@@ -1,15 +1,15 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../../../app/router/route_names.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_radius.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
+import '../../../bookings/data/bookings_api_repository.dart';
 import '../cubit/active_job_cubit.dart';
 
 class WorkerRatingPage extends StatefulWidget {
@@ -26,8 +26,9 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
   int _rating = 5;
   final TextEditingController _commentCtrl = TextEditingController();
   final Set<String> _selectedTraits = {};
-  final List<String> _photos = [];
-  final ImagePicker _picker = ImagePicker();
+  String? _resolvedCustomerId;
+  String? _customerName;
+  String? _customerAvatar;
 
   final List<String> _traits = [
     '👍 Polite & Respectful',
@@ -39,79 +40,34 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _resolvedCustomerId = widget.customerId;
+    unawaited(_loadBookingMeta());
+  }
+
+  Future<void> _loadBookingMeta() async {
+    try {
+      final booking =
+          await BookingsApiRepository().getById(widget.bookingId, forceNetwork: true);
+      if (!mounted) return;
+      setState(() {
+        _resolvedCustomerId =
+            (widget.customerId != null && widget.customerId!.isNotEmpty)
+                ? widget.customerId
+                : booking.customerId;
+        _customerName = booking.customerName;
+        _customerAvatar = booking.customerAvatar;
+      });
+    } catch (_) {
+      // Keep route/cubit customer id if fetch fails.
+    }
+  }
+
+  @override
   void dispose() {
     _commentCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
-    if (_photos.length >= 3) {
-      ToastUtils.showToast(context: context, message: 'Maximum 3 photos allowed');
-      return;
-    }
-    try {
-      final picked = await _picker.pickImage(
-        source: source,
-        maxWidth: 1600,
-        maxHeight: 1600,
-        imageQuality: 80,
-      );
-      if (picked != null && mounted) {
-        setState(() {
-          _photos.add(picked.path);
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        ToastUtils.showError(context: context, message: 'Could not select photo');
-      }
-    }
-  }
-
-  void _showImageSourcePicker() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Attach Job / Site Photo (Optional)',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFEFF6FF),
-                  child: Icon(Icons.camera_alt_rounded, color: Colors.blue),
-                ),
-                title: const Text('Take Photo with Camera'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFF0FDF4),
-                  child: Icon(Icons.photo_library_rounded, color: Colors.green),
-                ),
-                title: const Text('Choose from Gallery'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _submit() {
@@ -120,7 +76,14 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
       return;
     }
 
-    final cId = widget.customerId ?? '';
+    final cId = _resolvedCustomerId ?? widget.customerId ?? '';
+    if (cId.isEmpty) {
+      ToastUtils.showToast(
+        context: context,
+        message: 'Customer details missing — cannot submit review',
+      );
+      return;
+    }
 
     context.read<ActiveJobCubit>().submitWorkerReview(
       bookingId: widget.bookingId,
@@ -128,7 +91,6 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
       rating: _rating,
       comment: _commentCtrl.text.trim(),
       traits: _selectedTraits.toList(),
-      photoPaths: _photos,
     );
   }
 
@@ -154,6 +116,12 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
     final state = context.watch<ActiveJobCubit>().state;
     final job = state.job;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final customerName = (_customerName != null && _customerName!.isNotEmpty)
+        ? _customerName!
+        : (job?.customerName ?? 'Customer');
+    final customerAvatar = (_customerAvatar != null && _customerAvatar!.isNotEmpty)
+        ? _customerAvatar
+        : job?.customerAvatar;
 
     return PopScope(
       canPop: false,
@@ -164,7 +132,7 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
               context: context,
               message: 'Review submitted! Great work on completing this job.',
             );
-            context.go(RouteNames.workerDashboard);
+            context.goRefreshing(RouteNames.workerJobDetailPath(widget.bookingId));
           } else if (state.status == ActiveJobStatus.failure) {
             ToastUtils.showError(
               context: context,
@@ -180,7 +148,6 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. Customer Info Banner
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -200,13 +167,13 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                       CircleAvatar(
                         radius: 30,
                         backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                        backgroundImage: (job?.customerAvatar != null && job!.customerAvatar!.isNotEmpty)
-                            ? NetworkImage(job.customerAvatar!)
+                        backgroundImage: (customerAvatar != null && customerAvatar.isNotEmpty)
+                            ? NetworkImage(customerAvatar)
                             : null,
-                        child: (job?.customerAvatar == null || job!.customerAvatar!.isEmpty)
+                        child: (customerAvatar == null || customerAvatar.isEmpty)
                             ? Text(
-                                (job?.customerName.isNotEmpty == true)
-                                    ? job!.customerName[0].toUpperCase()
+                                customerName.isNotEmpty
+                                    ? customerName[0].toUpperCase()
                                     : 'C',
                                 style: const TextStyle(
                                   fontSize: 24,
@@ -237,7 +204,7 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              job?.customerName ?? 'Customer',
+                              customerName,
                               style: const TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.bold,
@@ -258,7 +225,6 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // 2. Interactive Star Rating
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                   decoration: BoxDecoration(
@@ -284,11 +250,7 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                               star <= _rating ? Icons.star_rounded : Icons.star_outline_rounded,
                               color: const Color(0xFFF59E0B),
                             ),
-                            onPressed: () {
-                              setState(() {
-                                _rating = star;
-                              });
-                            },
+                            onPressed: () => setState(() => _rating = star),
                           );
                         }),
                       ),
@@ -306,7 +268,6 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // 3. Customer Positive Traits
                 const Text(
                   'Compliments & Traits (Optional)',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
@@ -344,7 +305,6 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // 4. Detailed Description & Feedback (Optional)
                 Row(
                   children: [
                     const Text(
@@ -363,7 +323,8 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                   controller: _commentCtrl,
                   maxLines: 3,
                   decoration: InputDecoration(
-                    hintText: 'Share notes about site conditions, customer cooperation, or remarks...',
+                    hintText:
+                        'Share notes about site conditions, customer cooperation, or remarks...',
                     hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
                     filled: true,
                     fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -381,129 +342,8 @@ class _WorkerRatingPageState extends State<WorkerRatingPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                // 5. Work Completion / Site Photos (Optional)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Work / Site Photos',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '(Optional, max 3)',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
-                        ),
-                      ],
-                    ),
-                    if (_photos.length < 3)
-                      TextButton.icon(
-                        onPressed: _showImageSourcePicker,
-                        icon: const Icon(Icons.add_a_photo_rounded, size: 16),
-                        label: const Text('Add Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // Photo Thumbnails Row
-                if (_photos.isEmpty)
-                  InkWell(
-                    onTap: _showImageSourcePicker,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      height: 90,
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.withValues(alpha: 0.25),
-                          style: BorderStyle.solid,
-                        ),
-                      ),
-                      child: Center(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.camera_enhance_rounded, color: Colors.grey.shade400, size: 22),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Tap to attach proof of work / completed site',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  Row(
-                    children: [
-                      for (int i = 0; i < _photos.length; i++) ...[
-                        Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.file(
-                                File(_photos[i]),
-                                width: 80,
-                                height: 80,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              top: 2,
-                              right: 2,
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _photos.removeAt(i);
-                                  });
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.black87,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.close,
-                                    size: 14,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      if (_photos.length < 3)
-                        InkWell(
-                          onTap: _showImageSourcePicker,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.add, color: Colors.grey, size: 28),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
                 const SizedBox(height: 32),
 
-                // 6. Submit Button
                 ElevatedButton(
                   onPressed: state.status == ActiveJobStatus.loading ? null : _submit,
                   style: ElevatedButton.styleFrom(

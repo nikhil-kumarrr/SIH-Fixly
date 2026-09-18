@@ -1,74 +1,33 @@
 import Banner from '../models/Banner.js';
 import User from '../models/User.js';
+import mongoose from 'mongoose';
 import { notifyUsers, notifyTopic, safeNotify } from '../services/notificationService.js';
+import { invalidateHomeCache, syncBannerToRedis } from '../utils/homeCache.js';
 
-// Default starter banners to seed if none exist
-const DEFAULT_BANNERS = [
-    {
-        title: 'Flat 50% Off First Booking',
-        code: 'FIXLY50',
-        discount: '50% OFF',
-        discountPercent: 50,
-        description: 'Get 50% discount up to ₹150 on your first home repair service',
-        gradient: ['#1E3A8A', '#3B82F6'],
-        category: 'all',
-        targetUserRole: 'all',
-        minOrderValue: 249,
-        maxDiscount: 150,
-        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        isActive: true,
-        priority: 10
-    },
-    {
-        title: 'AC & Appliance Mega Saver',
-        code: 'COOL20',
-        discount: '20% OFF',
-        discountPercent: 20,
-        description: 'Save up to ₹250 on all AC and appliance servicing & repairs',
-        gradient: ['#047857', '#10B981'],
-        category: 'technician',
-        targetUserRole: 'all',
-        minOrderValue: 399,
-        maxDiscount: 250,
-        validUntil: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        isActive: true,
-        priority: 8
-    },
-    {
-        title: 'Super Weekend Special',
-        code: 'WEEKEND100',
-        discount: '₹100 FLAT',
-        discountAmount: 100,
-        description: 'Flat ₹100 instant cash discount on electrician & plumber orders',
-        gradient: ['#7C2D12', '#EA580C'],
-        category: 'all',
-        targetUserRole: 'all',
-        minOrderValue: 299,
-        maxDiscount: 100,
-        validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        isActive: true,
-        priority: 6
+const parseEmails = (raw) => {
+    if (Array.isArray(raw)) {
+        return raw.map((e) => String(e).toLowerCase().trim()).filter(Boolean);
     }
-];
-
-// Helper to seed if collection is empty
-export const seedDefaultBannersIfEmpty = async () => {
-    try {
-        const count = await Banner.countDocuments();
-        if (count === 0) {
-            await Banner.insertMany(DEFAULT_BANNERS);
-            console.log('✅ Seeded default promotional coupon banners');
-        }
-    } catch (err) {
-        console.warn('⚠️ Could not seed default banners:', err.message);
+    if (typeof raw === 'string' && raw.trim()) {
+        return raw.split(/[,;\s]+/).map((e) => e.toLowerCase().trim()).filter(Boolean);
     }
+    return [];
 };
 
-// Customer API: Get all active coupon banners
+const resolveTargetUserIds = async ({ targetUserIds, targetUserEmails }) => {
+    let resolvedIds = Array.isArray(targetUserIds)
+        ? targetUserIds.filter(Boolean).map((id) => String(id))
+        : [];
+    const emails = parseEmails(targetUserEmails);
+    if (emails.length > 0) {
+        const users = await User.find({ email: { $in: emails } }).select('_id').lean();
+        for (const u of users) resolvedIds.push(String(u._id));
+    }
+    return { resolvedIds: [...new Set(resolvedIds)], emails };
+};
+
 export const getBanners = async (req, res) => {
     try {
-        await seedDefaultBannersIfEmpty();
-
         const { category, targetUserRole } = req.query;
         const query = { isActive: true };
 
@@ -80,27 +39,58 @@ export const getBanners = async (req, res) => {
             query.targetUserRole = { $in: ['all', targetUserRole] };
         }
 
+        // Hide user-specific coupons from public home unless assigned to this user
+        const userId = req.user?.id || req.user?._id;
+        if (userId) {
+            query.$and = [
+                ...(query.$and || []),
+                {
+                    $or: [
+                        { targetUserIds: { $exists: false } },
+                        { targetUserIds: { $size: 0 } },
+                        { targetUserIds: userId },
+                    ],
+                },
+                // Hide coupons this user already redeemed
+                {
+                    $or: [
+                        { usedByUserIds: { $exists: false } },
+                        { usedByUserIds: { $size: 0 } },
+                        { usedByUserIds: { $nin: [userId] } },
+                    ],
+                },
+            ];
+        } else {
+            query.$and = [
+                ...(query.$and || []),
+                {
+                    $or: [
+                        { targetUserIds: { $exists: false } },
+                        { targetUserIds: { $size: 0 } },
+                    ],
+                },
+            ];
+        }
+
         const banners = await Banner.find(query)
             .sort({ priority: -1, createdAt: -1 })
             .lean();
 
         return res.status(200).json({
             success: true,
-            banners: banners.length > 0 ? banners : DEFAULT_BANNERS
+            banners,
         });
     } catch (error) {
         return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch coupon banners',
-            banners: DEFAULT_BANNERS
+            banners: [],
         });
     }
 };
 
-// Admin API: List all banners (active and inactive)
 export const adminGetBanners = async (req, res) => {
     try {
-        await seedDefaultBannersIfEmpty();
         const banners = await Banner.find().sort({ priority: -1, createdAt: -1 }).lean();
         return res.status(200).json({ success: true, count: banners.length, banners });
     } catch (error) {
@@ -108,7 +98,6 @@ export const adminGetBanners = async (req, res) => {
     }
 };
 
-// Admin API: Create a new banner / coupon
 export const adminCreateBanner = async (req, res) => {
     try {
         const {
@@ -122,8 +111,11 @@ export const adminCreateBanner = async (req, res) => {
             gradient,
             category,
             targetUserRole,
+            targetUserIds,
+            targetUserEmails,
             minOrderValue,
             maxDiscount,
+            usageLimit,
             validUntil,
             isActive,
             priority
@@ -144,6 +136,11 @@ export const adminCreateBanner = async (req, res) => {
             });
         }
 
+        const { resolvedIds, emails } = await resolveTargetUserIds({
+            targetUserIds,
+            targetUserEmails,
+        });
+
         const banner = await Banner.create({
             title,
             code: code.toUpperCase().trim(),
@@ -155,35 +152,40 @@ export const adminCreateBanner = async (req, res) => {
             gradient: Array.isArray(gradient) && gradient.length > 0 ? gradient : ['#1E3A8A', '#3B82F6'],
             category: category || 'all',
             targetUserRole: targetUserRole || 'all',
+            targetUserIds: resolvedIds,
+            targetUserEmails: emails,
             minOrderValue: Number(minOrderValue) || 0,
             maxDiscount: Number(maxDiscount) || 500,
+            usageLimit: Number(usageLimit) || 0,
             validUntil: validUntil ? new Date(validUntil) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             isActive: isActive !== undefined ? Boolean(isActive) : true,
             priority: Number(priority) || 0
         });
 
-        // Broadcast notification to eligible targeted users whose marketing/discount toggle is ON
         const shouldNotify = req.body.notifyUsers !== undefined ? Boolean(req.body.notifyUsers) : true;
         if (shouldNotify) {
             safeNotify(async () => {
-                const roleFilter = {};
-                if (targetUserRole === 'customer') {
-                    roleFilter.role = 'customer';
-                } else if (targetUserRole === 'worker') {
-                    roleFilter.role = 'worker';
-                } else if (targetUserRole === 'new_user') {
-                    roleFilter.role = 'customer';
-                    roleFilter.createdAt = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+                let eligibleUsers = [];
+                if (resolvedIds.length > 0) {
+                    eligibleUsers = await User.find({
+                        _id: { $in: resolvedIds },
+                        'notificationPreferences.marketing': { $ne: false }
+                    }).select('_id').lean();
                 } else {
-                    roleFilter.role = { $in: ['customer', 'worker'] };
+                    const roleFilter = {};
+                    if (targetUserRole === 'customer') roleFilter.role = 'customer';
+                    else if (targetUserRole === 'worker') roleFilter.role = 'worker';
+                    else if (targetUserRole === 'new_user') {
+                        roleFilter.role = 'customer';
+                        roleFilter.createdAt = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+                    } else {
+                        roleFilter.role = { $in: ['customer', 'worker'] };
+                    }
+                    eligibleUsers = await User.find({
+                        ...roleFilter,
+                        'notificationPreferences.marketing': { $ne: false }
+                    }).select('_id').lean();
                 }
-
-                // FILTER: Only users with marketing notifications ENABLED
-                // (if user turned toggle off, notificationPreferences.marketing is false -> excluded!)
-                const eligibleUsers = await User.find({
-                    ...roleFilter,
-                    'notificationPreferences.marketing': { $ne: false }
-                }).select('_id email preferredLanguage pushTokens').lean();
 
                 const promoTitle = `New Offer: ${banner.discount}!`;
                 const promoBody = `Use coupon code ${banner.code} to get ${banner.discount}. ${banner.description || ''}`.trim();
@@ -208,39 +210,49 @@ export const adminCreateBanner = async (req, res) => {
                     );
                 }
 
-                // Also publish to role's marketing FCM topic for subscribers
-                try {
-                    const topics = targetUserRole === 'worker'
-                        ? ['fixly_workers_marketing']
-                        : targetUserRole === 'customer'
-                            ? ['fixly_customers_marketing']
-                            : ['fixly_customers_marketing', 'fixly_workers_marketing'];
-
-                    for (const topic of topics) {
-                        await notifyTopic({
-                            topic,
-                            eventType: 'PROMOTION_COUPON',
-                            title: promoTitle,
-                            body: promoBody,
-                            category: 'PROMOTION',
-                            data: {
-                                couponCode: banner.code,
-                                discount: banner.discount,
-                                category: banner.category || 'all',
-                                bannerId: String(banner._id),
-                                action: 'discount'
-                            }
-                        });
+                if (resolvedIds.length === 0) {
+                    try {
+                        const topics = targetUserRole === 'worker'
+                            ? ['fixly_workers_marketing']
+                            : targetUserRole === 'customer'
+                                ? ['fixly_customers_marketing']
+                                : ['fixly_customers_marketing', 'fixly_workers_marketing'];
+                        for (const topic of topics) {
+                            await notifyTopic({
+                                topic,
+                                eventType: 'PROMOTION_COUPON',
+                                title: promoTitle,
+                                body: promoBody,
+                                category: 'PROMOTION',
+                                data: {
+                                    couponCode: banner.code,
+                                    discount: banner.discount,
+                                    category: banner.category || 'all',
+                                    bannerId: String(banner._id),
+                                    action: 'discount'
+                                }
+                            });
+                        }
+                    } catch (err) {
+                        console.warn('[notifications] topic broadcast skipped:', err.message);
                     }
-                } catch (err) {
-                    console.warn('[notifications] topic broadcast skipped:', err.message);
                 }
             });
         }
 
+        await syncBannerToRedis();
+
+        const io = req.app?.get('io');
+        if (io) {
+            io.emit('banners:updated', { action: 'created', banner });
+            io.emit('home:updated');
+        }
+
         return res.status(201).json({
             success: true,
-            message: 'Coupon banner created successfully and notifications dispatched to eligible users',
+            message: resolvedIds.length > 0
+                ? `Coupon created for ${resolvedIds.length} specific user(s)`
+                : 'Coupon banner created successfully',
             banner
         });
     } catch (error) {
@@ -248,12 +260,10 @@ export const adminCreateBanner = async (req, res) => {
     }
 };
 
-// Admin API: Update an existing banner
 export const adminUpdateBanner = async (req, res) => {
     try {
         const { id } = req.params;
         const banner = await Banner.findById(id);
-
         if (!banner) {
             return res.status(404).json({ success: false, message: 'Banner not found' });
         }
@@ -261,7 +271,38 @@ export const adminUpdateBanner = async (req, res) => {
         const updates = { ...req.body };
         if (updates.code) updates.code = updates.code.toUpperCase().trim();
 
+        if (updates.targetUserEmails !== undefined || updates.targetUserIds !== undefined) {
+            const { resolvedIds, emails } = await resolveTargetUserIds({
+                // Emails-only update replaces assignment (don't keep stale IDs)
+                targetUserIds: updates.targetUserIds !== undefined
+                    ? updates.targetUserIds
+                    : (updates.targetUserEmails !== undefined ? [] : banner.targetUserIds),
+                targetUserEmails: updates.targetUserEmails,
+            });
+            updates.targetUserIds = resolvedIds;
+            updates.targetUserEmails = emails;
+            // Re-assign = restore access: drop these users from usedByUserIds
+            if (resolvedIds.length > 0) {
+                const oidList = resolvedIds
+                    .filter((id) => mongoose.isValidObjectId(id))
+                    .map((id) => new mongoose.Types.ObjectId(id));
+                if (oidList.length > 0) {
+                    await Banner.updateOne(
+                        { _id: id },
+                        { $pull: { usedByUserIds: { $in: oidList } } }
+                    );
+                }
+            }
+        }
+
         const updated = await Banner.findByIdAndUpdate(id, updates, { new: true });
+        await syncBannerToRedis();
+
+        const io = req.app?.get('io');
+        if (io) {
+            io.emit('banners:updated', { action: 'updated', banner: updated });
+            io.emit('home:updated');
+        }
 
         return res.status(200).json({
             success: true,
@@ -273,14 +314,19 @@ export const adminUpdateBanner = async (req, res) => {
     }
 };
 
-// Admin API: Delete a banner
 export const adminDeleteBanner = async (req, res) => {
     try {
         const { id } = req.params;
         const banner = await Banner.findByIdAndDelete(id);
-
         if (!banner) {
             return res.status(404).json({ success: false, message: 'Banner not found' });
+        }
+        await syncBannerToRedis();
+
+        const io = req.app?.get('io');
+        if (io) {
+            io.emit('banners:updated', { action: 'deleted', bannerId: id });
+            io.emit('home:updated');
         }
 
         return res.status(200).json({

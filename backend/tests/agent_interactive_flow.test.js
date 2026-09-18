@@ -9,7 +9,7 @@ import { processFlexiAgentMessage } from '../agent/index.js';
 
 test('AI Agent Interactive Conversation Flow (Progressive Slot-Filling & Availability Guardrails)', async (t) => {
     console.log('\n========================================================');
-    console.log('🤖 Fixly "Hey Flexi" Multi-Agent State Machine Test');
+    console.log('🤖 Fixly "Hey Fixly" Multi-Agent State Machine Test');
     console.log('========================================================');
 
     if (mongoose.connection.readyState === 0) {
@@ -40,7 +40,7 @@ test('AI Agent Interactive Conversation Flow (Progressive Slot-Filling & Availab
 
     // TURN 1: Initial speech requesting electrician
     await t.test('Turn 1: Category detected, prompts booking type', async () => {
-        const input = 'नमस्ते फ्लेक्सी, मुझे बिजली का काम है स्विच बोर्ड खराब हो गया है';
+        const input = 'नमस्ते फिक्सली, मुझे बिजली का काम है स्विच बोर्ड खराब हो गया है';
         console.log(`\n🗣️ [User Voice Input]: "${input}"`);
 
         const res1 = await processFlexiAgentMessage({

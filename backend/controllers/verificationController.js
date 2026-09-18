@@ -64,24 +64,30 @@ export const submitVerification = async (req, res) => {
         };
         await user.save();
 
+        const isAiVerifyEnabled = String(process.env.AI_VERIFY_ENABLED ?? process.env.ENABLE_AI_VERIFY ?? 'false').toLowerCase() === 'true';
+
         let aiResult = null;
-        try {
-            const rawUrl = process.env.IDENTITY_VERIFY_URL || process.env.AI_VERIFY_URL || 'http://127.0.0.1:8004';
-            const verifyUrl = rawUrl.replace(/\/verify\/?$/, '').replace(/\/$/, '');
-            const aiRes = await fetch(`${verifyUrl}/verify`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ documentUrl: governmentIdFrontUrl, selfieUrl: selfieImageUrl })
-            });
-            if (aiRes.ok) {
-                aiResult = await aiRes.json();
+        if (isAiVerifyEnabled) {
+            try {
+                const rawUrl = process.env.IDENTITY_VERIFY_URL || process.env.AI_VERIFY_URL || 'http://127.0.0.1:8004';
+                const verifyUrl = rawUrl.replace(/\/verify\/?$/, '').replace(/\/$/, '');
+                const aiRes = await fetch(`${verifyUrl}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ documentUrl: governmentIdFrontUrl, selfieUrl: selfieImageUrl })
+                });
+                if (aiRes.ok) {
+                    aiResult = await aiRes.json();
+                }
+            } catch (err) {
+                console.error('AI KYC Service failed:', err.message);
             }
-        } catch (err) {
-            console.error('AI KYC Service failed:', err.message);
+        } else {
+            console.log('[KYC Verification] AI verification is disabled via ENV (AI_VERIFY_ENABLED=false). Routed directly to manual admin review.');
         }
 
         let newStatus = 'MANUAL_REVIEW';
-        let reason = 'AI service unavailable or failed';
+        let reason = isAiVerifyEnabled ? 'AI service unavailable or failed' : 'Pending manual admin verification';
         
         if (aiResult && aiResult.success) {
             user.kycDocuments.livenessScore = aiResult.selfie.livenessScore;

@@ -28,7 +28,7 @@ class AiAgentService {
 
     if (_customDio != null) {
       final response = await _customDio.post(
-        '/ai/agent/chat',
+        ApiEndpoints.aiAgentChat,
         options: Options(
           headers: {
             'Content-Type': 'application/json',

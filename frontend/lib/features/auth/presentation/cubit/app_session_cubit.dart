@@ -14,6 +14,7 @@ import '../../../../core/network/customer_realtime_service.dart';
 import '../../../../core/network/worker_realtime_service.dart';
 import '../../../../core/preferences/app_preferences.dart';
 import '../../../../core/notifications/notification_service.dart';
+import '../../../../services/webrtc_call_service.dart';
 import '../../../../shared/data/mock/mock_repository.dart';
 import '../../../../shared/models/models.dart';
 import '../../data/auth_api_repository.dart';
@@ -113,6 +114,10 @@ class AppSessionCubit extends Cubit<AppSessionState> {
     } else {
       CustomerRealtimeService.instance.initForCustomer(session.user.id);
     }
+    // Keep WebRTC signaling connected so incoming calls reach this device.
+    unawaited(
+      WebRTCCallService.instance.initializeSocket(userId: session.user.id),
+    );
   }
 
   Future<void> setLocale(String locale) async {
@@ -484,5 +489,8 @@ class AppSessionCubit extends Cubit<AppSessionState> {
     } else {
       CustomerRealtimeService.instance.initForCustomer(session.user.id);
     }
+    unawaited(
+      WebRTCCallService.instance.initializeSocket(userId: session.user.id),
+    );
   }
 }

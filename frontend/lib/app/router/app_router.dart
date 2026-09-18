@@ -339,7 +339,9 @@ GoRouter createAppRouter() {
           ),
           _page(
             RouteNames.customerRating,
-            (_, s) => const CustomerRatingPage(),
+            (_, s) => CustomerRatingPage(
+              bookingId: s.uri.queryParameters['bookingId'],
+            ),
           ),
           _page(
             RouteNames.customerWorkerArrived,
@@ -490,11 +492,8 @@ GoRouter createAppRouter() {
       ),
       _page(
         RouteNames.workerPriceEstimation,
-        (_, s) => BlocProvider(
-          create: (_) => ActiveJobCubit()..load(),
-          child: WorkerPriceEstimationPage(
-            bookingId: s.uri.queryParameters['bookingId'] ?? '',
-          ),
+        (_, s) => WorkerPriceEstimationPage(
+          bookingId: s.uri.queryParameters['bookingId'] ?? '',
         ),
         overlay: true,
       ),
@@ -508,11 +507,8 @@ GoRouter createAppRouter() {
       ),
       _page(
         RouteNames.workerAddParts,
-        (_, s) => BlocProvider(
-          create: (_) => ActiveJobCubit()..load(),
-          child: WorkerAddPartsPage(
-            bookingId: s.uri.queryParameters['bookingId'] ?? '',
-          ),
+        (_, s) => WorkerAddPartsPage(
+          bookingId: s.uri.queryParameters['bookingId'] ?? '',
         ),
         overlay: true,
       ),
@@ -600,7 +596,13 @@ GoRouter createAppRouter() {
         (_, s) => const OrderHistoryPage(),
         overlay: true,
       ),
-      _page(RouteNames.sharedSos, (_, s) => const SosPage(), overlay: true),
+      _page(
+        RouteNames.sharedSos,
+        (_, s) => SosPage(
+          activeBookingId: s.uri.queryParameters['bookingId'],
+        ),
+        overlay: true,
+      ),
       _page(
         RouteNames.sharedSupportChat,
         (_, s) => BlocProvider(

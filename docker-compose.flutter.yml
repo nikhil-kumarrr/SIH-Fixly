@@ -1,30 +1,34 @@
 services:
   flutter:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    platform: linux/amd64
+    image: sih-fixly-flutter:latest
     container_name: fixly_flutter
     working_dir: /app
     volumes:
       - ./frontend:/app
       - flutter_pub_cache:/root/.pub-cache
       - flutter_gradle_cache:/root/.gradle
-    environment:
-      - CI=true
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
     command: >
       bash -c "
-        echo '===> [1/3] Checking Flutter Environment...' &&
-        flutter doctor &&
-        echo '===> [2/3] Getting Flutter Dependencies...' &&
+        echo '===> [1/4] Connecting ADB to Host Emulators (5555 & 5557)...' &&
+        adb connect host.docker.internal:5555 &&
+        adb connect host.docker.internal:5557 &&
+        adb devices &&
+        echo '===> [2/4] Getting Flutter Dependencies (flutter pub get)...' &&
         flutter pub get &&
-        echo '===> [3/3] Building Android Debug APK...' &&
+        echo '===> [3/4] Building Debug APK...' &&
         flutter build apk --debug &&
-        echo '' &&
-        echo '=====================================================' &&
-        echo ' SUCCESS: Android APK built inside Docker!' &&
-        echo ' Host APK output path:' &&
-        echo ' frontend/build/app/outputs/flutter-apk/app-debug.apk' &&
-        echo '====================================================='
+        echo '===> [4/4] Starting Flutter Run loop on host.docker.internal:5555...' &&
+        while true; do
+          adb connect host.docker.internal:5555
+          adb connect host.docker.internal:5557
+          flutter run -d host.docker.internal:5555
+          echo '===> flutter run exited. Reconnecting in 3s...'
+          sleep 3
+        done
       "
 
 volumes:

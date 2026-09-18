@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/router/route_names.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/network/worker_realtime_service.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
+import '../../../../services/webrtc_call_service.dart';
 import '../../../../shared/models/models.dart';
 import '../cubit/worker_dashboard_cubit.dart';
 import '../widgets/worker_sos_sheet.dart';
@@ -20,7 +21,16 @@ class WorkerDashboardPage extends StatefulWidget {
   State<WorkerDashboardPage> createState() => _WorkerDashboardPageState();
 }
 
-class _WorkerDashboardPageState extends State<WorkerDashboardPage> {
+class _WorkerDashboardPageState extends State<WorkerDashboardPage>
+    with RefreshWhenNavigatedTo {
+  @override
+  List<String> get refreshRoutePaths => [RouteNames.workerDashboard];
+
+  @override
+  void onScreenRefresh() {
+    context.read<WorkerDashboardCubit>().load();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -28,11 +38,45 @@ class _WorkerDashboardPageState extends State<WorkerDashboardPage> {
   }
 
   void _navigateToTab(int branchIndex, String routeName) {
+    // Branch indexes must match StatefulShellRoute branches in app_router.dart
+    // Worker: 0 dashboard, 1 jobs, 2 earnings, 3 profile
     final shell = StatefulNavigationShell.maybeOf(context);
     if (shell != null) {
       shell.goBranch(branchIndex);
     } else {
       context.go(routeName);
+    }
+  }
+
+  Future<void> _callActiveJobCustomer(WorkerJob activeJob) async {
+    final bookingId = activeJob.id;
+    if (bookingId.isEmpty) {
+      ToastUtils.showError(context: context, message: 'Booking ID not available');
+      return;
+    }
+    final peerName = activeJob.customerName.trim();
+    context.push(
+      RouteNames.call,
+      extra: {
+        'bookingId': bookingId,
+        'peerName': peerName.isEmpty ? 'Customer' : peerName,
+        'peerRole': 'customer',
+        'peerAvatar': activeJob.customerAvatar,
+        'serviceTitle': activeJob.title,
+        'isIncoming': false,
+      },
+    );
+
+    final success = await WebRTCCallService.instance.startCall(
+      bookingId: bookingId,
+      expectedPeerName: peerName.isEmpty ? 'Customer' : peerName,
+      expectedPeerRole: 'customer',
+      expectedPeerAvatar: activeJob.customerAvatar,
+      expectedServiceTitle: activeJob.title,
+    );
+
+    if (!success && mounted) {
+      ToastUtils.showError(context: context, message: 'Could not connect call');
     }
   }
 
@@ -852,9 +896,8 @@ class _WorkerDashboardPageState extends State<WorkerDashboardPage> {
           const SizedBox(height: 12),
           Row(
             children: [
-              if (activeJob.customerPhone != null && activeJob.customerPhone!.isNotEmpty) ...[
-                OutlinedButton(
-                  onPressed: () => launchUrl(Uri.parse('tel:${activeJob.customerPhone}')),
+              OutlinedButton(
+                  onPressed: () => _callActiveJobCustomer(activeJob),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: isDark ? Colors.white70 : const Color(0xFF334155),
                     side: BorderSide(
@@ -875,7 +918,6 @@ class _WorkerDashboardPageState extends State<WorkerDashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-              ],
               Expanded(
                 child: FilledButton(
                   onPressed: () => context.push(RouteNames.workerActiveJob),

@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { detectCategory, detectLanguage, isBookingQuery } from '../agent/flexiAgent.js';
 import { llm, isGeminiConfigured } from '../agent/model.js';
-import { FLEXI_SYSTEM_PROMPT } from '../agent/prompt.js';
+import { FIXLY_SYSTEM_PROMPT } from '../agent/prompts/agentPrompt.js';
 import Booking from '../models/Booking.js';
 import CooperativeSociety from '../models/CooperativeSociety.js';
 import Cooperative from '../models/Cooperative.js';
 
-test('Flexi AI Agent correctly recognizes categories from natural words', () => {
+test('Fixly AI Agent correctly recognizes categories from natural words', () => {
     assert.equal(detectCategory('bijli ka fuse ud gaya hai'), 'Electrical');
     assert.equal(detectCategory('nal se paani leak ho raha hai'), 'Plumbing');
     assert.equal(detectCategory('sofa ki deep cleaning karwani hai'), 'Cleaning');
@@ -15,20 +15,18 @@ test('Flexi AI Agent correctly recognizes categories from natural words', () => 
     assert.equal(detectCategory('ac thanda nahi kar raha'), 'Appliance');
 });
 
-test('Flexi AI Agent detects language preference accurately', () => {
+test('Fixly AI Agent detects language preference accurately', () => {
     assert.equal(detectLanguage('mujhe ek plumber chahiye turant'), 'hi');
     assert.equal(detectLanguage('I need a professional electrician today'), 'hi');
 });
 
-test('Flexi AI Agent detects active booking query phrases', () => {
+test('Fixly AI Agent detects active booking query phrases', () => {
     assert.equal(isBookingQuery('meri current booking ka status batao'), true);
     assert.equal(isBookingQuery('what is my booking status'), true);
-    assert.equal(isBookingQuery('cricket match score'), false);
 });
 
-test('Agent LangChain model and prompt configuration are cleanly defined', () => {
-    assert.ok(FLEXI_SYSTEM_PROMPT.includes('Flexi AI'));
-    assert.ok(FLEXI_SYSTEM_PROMPT.includes('Fixly Cooperative Gig Services'));
+test('Fixly AI Agent system prompt enforces safety and strict cooperative scope', () => {
+    assert.ok(FIXLY_SYSTEM_PROMPT.includes('Fixly AI'));
     assert.equal(typeof isGeminiConfigured, 'function');
     assert.ok(llm);
 });

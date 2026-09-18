@@ -57,6 +57,7 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
   bool _isLocating = false;
 
   bool _isScheduled = false;
+  bool _isEmergency = false;
   DateTime? _scheduledDate;
   TimeOfDay? _scheduledTime;
 
@@ -133,10 +134,13 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
 
   String _titleCase(String text) {
     if (text.isEmpty) return text;
-    return text.split(' ').map((word) {
-      if (word.isEmpty) return word;
-      return word[0].toUpperCase() + word.substring(1).toLowerCase();
-    }).join(' ');
+    return text
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) return word;
+          return word[0].toUpperCase() + word.substring(1).toLowerCase();
+        })
+        .join(' ');
   }
 
   bool _isRecognizedCategory(String s) {
@@ -181,13 +185,17 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
   }
 
   ServiceItem _formatServiceItem(ServiceItem s, String category) {
-    final title = s.title.trim().isNotEmpty ? _titleCase(s.title.trim()) : _titleCase(category);
+    final title = s.title.trim().isNotEmpty
+        ? _titleCase(s.title.trim())
+        : _titleCase(category);
 
     return ServiceItem(
       id: s.id,
       categoryId: s.categoryId,
       title: title,
-      description: s.description.isNotEmpty ? s.description : 'Professional service for ${_titleCase(category)}',
+      description: s.description.isNotEmpty
+          ? s.description
+          : 'Professional service for ${_titleCase(category)}',
       priceFrom: s.priceFrom > 0 ? s.priceFrom : 199,
       rating: s.rating,
       titleHi: s.titleHi,
@@ -199,16 +207,24 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
     );
   }
 
-  List<ServiceItem> _getServicesForCategory(String category, List<ServiceItem> allServices) {
-    final matching = allServices.where((s) => _matchesCategory(s.categoryId, category)).toList();
+  List<ServiceItem> _getServicesForCategory(
+    String category,
+    List<ServiceItem> allServices,
+  ) {
+    final matching = allServices
+        .where((s) => _matchesCategory(s.categoryId, category))
+        .toList();
     if (matching.isNotEmpty) {
       return matching.map((s) => _formatServiceItem(s, category)).toList();
     }
 
-    final partial = allServices.where((s) =>
-      s.categoryId.toLowerCase().contains(category.toLowerCase()) ||
-      category.toLowerCase().contains(s.categoryId.toLowerCase())
-    ).toList();
+    final partial = allServices
+        .where(
+          (s) =>
+              s.categoryId.toLowerCase().contains(category.toLowerCase()) ||
+              category.toLowerCase().contains(s.categoryId.toLowerCase()),
+        )
+        .toList();
     if (partial.isNotEmpty) {
       return partial.map((s) => _formatServiceItem(s, category)).toList();
     }
@@ -244,7 +260,8 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
       // A. From worker profile (categories array, primary category, skills)
       if (worker != null) {
         for (final c in worker.categories) {
-          if (c.trim().isNotEmpty && !catList.any((x) => x.toLowerCase() == c.trim().toLowerCase())) {
+          if (c.trim().isNotEmpty &&
+              !catList.any((x) => x.toLowerCase() == c.trim().toLowerCase())) {
             catList.add(_titleCase(c.trim()));
           }
         }
@@ -257,7 +274,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
         for (final skill in worker.skills) {
           if (_isRecognizedCategory(skill)) {
             final formatted = _titleCase(skill.trim());
-            if (!catList.any((x) => x.toLowerCase() == formatted.toLowerCase())) {
+            if (!catList.any(
+              (x) => x.toLowerCase() == formatted.toLowerCase(),
+            )) {
               catList.add(formatted);
             }
           }
@@ -276,7 +295,8 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
       if (catList.isEmpty) {
         for (final s in allServices) {
           final c = _titleCase(s.categoryId.trim());
-          if (c.isNotEmpty && !catList.any((x) => x.toLowerCase() == c.toLowerCase())) {
+          if (c.isNotEmpty &&
+              !catList.any((x) => x.toLowerCase() == c.toLowerCase())) {
             catList.add(c);
           }
         }
@@ -286,27 +306,30 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
       String? initialCategory;
       if (incomingCategoryId != null && incomingCategoryId.isNotEmpty) {
         initialCategory = catList.cast<String?>().firstWhere(
-              (c) => _matchesCategory(c!, incomingCategoryId),
-              orElse: () => null,
-            );
+          (c) => _matchesCategory(c!, incomingCategoryId),
+          orElse: () => null,
+        );
       }
-      if (initialCategory == null && requestedServiceId != null && requestedServiceId.isNotEmpty) {
+      if (initialCategory == null &&
+          requestedServiceId != null &&
+          requestedServiceId.isNotEmpty) {
         final match = allServices.cast<ServiceItem?>().firstWhere(
-              (s) => s?.id == requestedServiceId,
-              orElse: () => null,
-            );
+          (s) => s?.id == requestedServiceId,
+          orElse: () => null,
+        );
         if (match != null) {
           initialCategory = catList.cast<String?>().firstWhere(
-                (c) => _matchesCategory(c!, match.categoryId),
-                orElse: () => null,
-              );
+            (c) => _matchesCategory(c!, match.categoryId),
+            orElse: () => null,
+          );
         }
       }
-      initialCategory ??= (worker?.category != null && worker!.category!.isNotEmpty)
+      initialCategory ??=
+          (worker?.category != null && worker!.category!.isNotEmpty)
           ? catList.cast<String?>().firstWhere(
-                (c) => _matchesCategory(c!, worker!.category!),
-                orElse: () => null,
-              )
+              (c) => _matchesCategory(c!, worker!.category!),
+              orElse: () => null,
+            )
           : null;
       initialCategory ??= catList.isNotEmpty ? catList.first : 'Services';
 
@@ -314,7 +337,10 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
       _selectedCategory = initialCategory;
 
       // 5. Populate services for this active category
-      final categoryServices = _getServicesForCategory(initialCategory, allServices);
+      final categoryServices = _getServicesForCategory(
+        initialCategory,
+        allServices,
+      );
       _services = categoryServices;
 
       // 6. Resolve selected service
@@ -327,7 +353,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
           }
         }
       }
-      targetService ??= categoryServices.isNotEmpty ? categoryServices.first : null;
+      targetService ??= categoryServices.isNotEmpty
+          ? categoryServices.first
+          : null;
 
       if (targetService != null) {
         cubit.selectService(targetService);
@@ -356,10 +384,14 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
     final c = category.toLowerCase();
     if (c.contains('elect')) return Icons.bolt_rounded;
     if (c.contains('plumb')) return Icons.plumbing_rounded;
-    if (c.contains('tech') || c.contains('appliance') || c.contains('geyser') || c.contains('ac')) {
+    if (c.contains('tech') ||
+        c.contains('appliance') ||
+        c.contains('geyser') ||
+        c.contains('ac')) {
       return Icons.build_rounded;
     }
-    if (c.contains('care') || c.contains('nurse')) return Icons.favorite_rounded;
+    if (c.contains('care') || c.contains('nurse'))
+      return Icons.favorite_rounded;
     if (c.contains('clean')) return Icons.cleaning_services_rounded;
     if (c.contains('carpen')) return Icons.carpenter_rounded;
     if (c.contains('paint')) return Icons.format_paint_rounded;
@@ -513,11 +545,19 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       color: AppColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.photo_library_outlined, color: AppColors.primary),
+                    child: const Icon(
+                      Icons.photo_library_outlined,
+                      color: AppColors.primary,
+                    ),
                   ),
-                  title: const Text('Add Photos', style: TextStyle(fontWeight: FontWeight.w600)),
+                  title: const Text(
+                    'Add Photos',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   subtitle: const Text('Capture or pick photos of the problem'),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   onTap: () => Navigator.pop(context, 'photo'),
                 ),
                 const SizedBox(height: 8),
@@ -528,11 +568,21 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       color: AppColors.secondary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.videocam_outlined, color: AppColors.secondary),
+                    child: const Icon(
+                      Icons.videocam_outlined,
+                      color: AppColors.secondary,
+                    ),
                   ),
-                  title: const Text('Add Video', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Record or upload a short clip showing the issue'),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text(
+                    'Add Video',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Record or upload a short clip showing the issue',
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   onTap: () => Navigator.pop(context, 'video'),
                 ),
                 const SizedBox(height: 12),
@@ -544,7 +594,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
     );
 
     if (!mounted || type == null) return;
-    final source = await _chooseMediaSource(type == 'photo' ? 'Photo' : 'Video');
+    final source = await _chooseMediaSource(
+      type == 'photo' ? 'Photo' : 'Video',
+    );
     if (!mounted || source == null) return;
     if (type == 'photo') await _pickPhotos(source: source);
     if (type == 'video') await _pickVideo(source: source);
@@ -589,10 +641,18 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       color: theme.colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(Icons.photo_library_outlined, color: theme.colorScheme.primary),
+                    child: Icon(
+                      Icons.photo_library_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
-                  title: const Text('Choose from Gallery', style: TextStyle(fontWeight: FontWeight.w600)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text(
+                    'Choose from Gallery',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   onTap: () => Navigator.pop(context, ImageSource.gallery),
                 ),
                 const SizedBox(height: 8),
@@ -603,10 +663,18 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       color: AppColors.accent.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.camera_alt_outlined, color: AppColors.accent),
+                    child: const Icon(
+                      Icons.camera_alt_outlined,
+                      color: AppColors.accent,
+                    ),
                   ),
-                  title: const Text('Take with Camera', style: TextStyle(fontWeight: FontWeight.w600)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text(
+                    'Take with Camera',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   onTap: () => Navigator.pop(context, ImageSource.camera),
                 ),
                 const SizedBox(height: 12),
@@ -641,6 +709,14 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
 
   Future<void> _continue() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_isEmergency && _isScheduled) {
+      ToastUtils.showToast(
+        context: context,
+        message: 'SOS bookings are immediate — turn off schedule or SOS',
+      );
+      return;
+    }
 
     if (_isScheduled && (_scheduledDate == null || _scheduledTime == null)) {
       ToastUtils.showToast(
@@ -678,6 +754,7 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
       workerId: widget.workerId,
       photoPaths: _photos.map((file) => file.path).toList(),
       videoPaths: _videos.map((file) => file.path).toList(),
+      isEmergency: _isEmergency,
     );
 
     if (!mounted) return;
@@ -701,11 +778,14 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
         if (avatarUrl.startsWith('data:image') || avatarUrl.length > 200) {
           try {
             final commaIdx = avatarUrl.indexOf(',');
-            final raw = commaIdx != -1 ? avatarUrl.substring(commaIdx + 1) : avatarUrl;
+            final raw = commaIdx != -1
+                ? avatarUrl.substring(commaIdx + 1)
+                : avatarUrl;
             final bytes = base64Decode(raw.replaceAll(RegExp(r'\s+'), ''));
             return Image.memory(bytes, fit: BoxFit.cover);
           } catch (_) {}
-        } else if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+        } else if (avatarUrl.startsWith('http://') ||
+            avatarUrl.startsWith('https://')) {
           return Image.network(
             avatarUrl,
             fit: BoxFit.cover,
@@ -750,11 +830,7 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              width: 54,
-              height: 54,
-              child: buildAvatar(),
-            ),
+            child: SizedBox(width: 54, height: 54, child: buildAvatar()),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -788,21 +864,25 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                 Row(
                   children: [
                     if (_selectedCategory != null) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          _selectedCategory!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.primary,
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _selectedCategory!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.primary,
+                            ),
                           ),
                         ),
                       ),
@@ -821,16 +901,21 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       ),
                     ),
                     if (worker.jobsCompleted > 0) ...[
-                      Text(
-                        ' • ${worker.jobsCompleted} jobs',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.hintColor,
+                      Flexible(
+                        child: Text(
+                          ' • ${worker.jobsCompleted} jobs',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.hintColor,
+                          ),
                         ),
                       ),
                     ],
                   ],
                 ),
-                if (worker.federationName != null && worker.federationName!.isNotEmpty) ...[
+                if (worker.federationName != null &&
+                    worker.federationName!.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   CooperativeFederationBadge(
                     federationName: worker.federationName!,
@@ -848,27 +933,73 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
   List<String> _getProblemQuickTags() {
     final cat = (_selectedCategory ?? '').toLowerCase();
     if (cat.contains('plumb')) {
-      return const ['Water leakage', 'Tap repair', 'Pipe blocked', 'Low pressure', 'Flush issue'];
+      return const [
+        'Water leakage',
+        'Tap repair',
+        'Pipe blocked',
+        'Low pressure',
+        'Flush issue',
+      ];
     }
     if (cat.contains('elect')) {
-      return const ['Short circuit', 'Switch faulty', 'Fan repair', 'Wiring check', 'MCB tripping'];
+      return const [
+        'Short circuit',
+        'Switch faulty',
+        'Fan repair',
+        'Wiring check',
+        'MCB tripping',
+      ];
     }
     if (cat.contains('clean')) {
-      return const ['Deep cleaning', 'Bathroom stains', 'Kitchen oil', 'Sofa wash', 'Full home'];
+      return const [
+        'Deep cleaning',
+        'Bathroom stains',
+        'Kitchen oil',
+        'Sofa wash',
+        'Full home',
+      ];
     }
     if (cat.contains('carpen')) {
-      return const ['Door lock stuck', 'Furniture repair', 'Hinge broken', 'Wood polish'];
+      return const [
+        'Door lock stuck',
+        'Furniture repair',
+        'Hinge broken',
+        'Wood polish',
+      ];
     }
     if (cat.contains('paint')) {
-      return const ['Wall crack touchup', 'Water dampness', 'Single room paint', 'Ceiling stain'];
+      return const [
+        'Wall crack touchup',
+        'Water dampness',
+        'Single room paint',
+        'Ceiling stain',
+      ];
     }
-    if (cat.contains('tech') || cat.contains('appliance') || cat.contains('ac')) {
-      return const ['Not cooling / heating', 'Water leaking', 'Strange noise', 'Power not turning on', 'Filter check'];
+    if (cat.contains('tech') ||
+        cat.contains('appliance') ||
+        cat.contains('ac')) {
+      return const [
+        'Not cooling / heating',
+        'Water leaking',
+        'Strange noise',
+        'Power not turning on',
+        'Filter check',
+      ];
     }
     if (cat.contains('care') || cat.contains('nurse')) {
-      return const ['Elderly mobility help', 'Vitals check & dressing', 'Bedside support', 'Post-surgery care'];
+      return const [
+        'Elderly mobility help',
+        'Vitals check & dressing',
+        'Bedside support',
+        'Post-surgery care',
+      ];
     }
-    return const ['Urgent inspection', 'Replacement needed', 'Fault diagnosis', 'Installation'];
+    return const [
+      'Urgent inspection',
+      'Replacement needed',
+      'Fault diagnosis',
+      'Installation',
+    ];
   }
 
   Widget _buildPickerActionButton({
@@ -884,22 +1015,28 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: color.withValues(alpha: 0.28)),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 16, color: color),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: color,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
                 ),
               ),
             ],
@@ -941,7 +1078,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
               icon: Icons.home_repair_service_rounded,
               iconColor: scheme.primary,
               title: 'Select Service',
-              badge: _selectedCategory != null ? 'Category: $_selectedCategory' : null,
+              badge: _selectedCategory != null
+                  ? 'Category: $_selectedCategory'
+                  : null,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -956,23 +1095,36 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     key: ValueKey('category_dropdown_$_selectedCategory'),
-                    initialValue: _availableCategories.contains(_selectedCategory)
+                    initialValue:
+                        _availableCategories.contains(_selectedCategory)
                         ? _selectedCategory
-                        : (_availableCategories.isNotEmpty ? _availableCategories.first : null),
+                        : (_availableCategories.isNotEmpty
+                              ? _availableCategories.first
+                              : null),
                     isExpanded: true,
                     decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.primary, width: 1.8),
+                        borderSide: BorderSide(
+                          color: scheme.primary,
+                          width: 1.8,
+                        ),
                       ),
                     ),
                     items: _availableCategories
@@ -981,11 +1133,18 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                             value: cat,
                             child: Row(
                               children: [
-                                Icon(_getCategoryIcon(cat), size: 18, color: scheme.primary),
+                                Icon(
+                                  _getCategoryIcon(cat),
+                                  size: 18,
+                                  color: scheme.primary,
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   cat,
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ],
                             ),
@@ -997,7 +1156,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                         : (val) {
                             if (val != null) _onCategoryChanged(val);
                           },
-                    validator: (val) => val == null || val.isEmpty ? 'Please select category' : null,
+                    validator: (val) => val == null || val.isEmpty
+                        ? 'Please select category'
+                        : null,
                   ),
 
                   // Quick Category Choice Chips (if worker offers multiple categories)
@@ -1007,7 +1168,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       spacing: 8,
                       runSpacing: 6,
                       children: _availableCategories.map((cat) {
-                        final isSelected = cat.toLowerCase() == _selectedCategory?.toLowerCase();
+                        final isSelected =
+                            cat.toLowerCase() ==
+                            _selectedCategory?.toLowerCase();
                         return ChoiceChip(
                           selected: isSelected,
                           avatar: Icon(
@@ -1020,11 +1183,14 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: isSelected ? Colors.white : scheme.onSurface,
+                              color: isSelected
+                                  ? Colors.white
+                                  : scheme.onSurface,
                             ),
                           ),
                           selectedColor: scheme.primary,
-                          backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                          backgroundColor: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.4),
                           side: BorderSide(
                             color: isSelected
                                 ? scheme.primary
@@ -1056,18 +1222,28 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                         : (_services.isNotEmpty ? _services.first : null),
                     isExpanded: true,
                     decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.primary, width: 1.8),
+                        borderSide: BorderSide(
+                          color: scheme.primary,
+                          width: 1.8,
+                        ),
                       ),
                       prefixIcon: const Icon(Icons.handyman_rounded),
                     ),
@@ -1081,13 +1257,21 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                                   child: Text(
                                     item.title,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13.5,
+                                    ),
                                   ),
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: scheme.primary.withValues(alpha: 0.09),
+                                    color: scheme.primary.withValues(
+                                      alpha: 0.09,
+                                    ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
@@ -1112,7 +1296,8 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                               setState(() {});
                             }
                           },
-                    validator: (item) => item == null ? 'Please select a service' : null,
+                    validator: (item) =>
+                        item == null ? 'Please select a service' : null,
                   ),
 
                   if (selectedService != null) ...[
@@ -1121,7 +1306,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        color: scheme.surfaceContainerHighest.withValues(
+                          alpha: 0.4,
+                        ),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -1129,15 +1316,11 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.schedule_rounded, size: 16, color: scheme.primary),
-                              const SizedBox(width: 6),
-                              Text(
-                                selectedService.estimatedTime ?? '1 Hour',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              Icon(
+                                Icons.currency_rupee_outlined,
+                                size: 16,
+                                color: scheme.primary,
                               ),
-                              const Spacer(),
                               Text(
                                 'Starting from ₹${selectedService.priceFrom.toStringAsFixed(0)}',
                                 style: theme.textTheme.bodySmall?.copyWith(
@@ -1182,24 +1365,36 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                     maxLines: 6,
                     textInputAction: TextInputAction.newline,
                     decoration: InputDecoration(
-                      hintText: 'Describe the problem in detail so the professional can bring the right tools & spare parts...',
-                      hintStyle: TextStyle(fontSize: 13.5, color: theme.hintColor.withValues(alpha: 0.7)),
+                      hintText:
+                          'Describe the problem in detail so the professional can bring the right tools & spare parts...',
+                      hintStyle: TextStyle(
+                        fontSize: 13.5,
+                        color: theme.hintColor.withValues(alpha: 0.7),
+                      ),
                       alignLabelWithHint: true,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.primary, width: 1.8),
+                        borderSide: BorderSide(
+                          color: scheme.primary,
+                          width: 1.8,
+                        ),
                       ),
                     ),
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty ? 'Please describe the issue' : null,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Please describe the issue'
+                        : null,
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -1226,9 +1421,14 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                         },
                         borderRadius: BorderRadius.circular(20),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                            color: scheme.surfaceContainerHighest.withValues(
+                              alpha: 0.5,
+                            ),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color: scheme.outline.withValues(alpha: 0.15),
@@ -1266,7 +1466,10 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       borderRadius: BorderRadius.circular(14),
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 18,
+                          horizontal: 16,
+                        ),
                         decoration: BoxDecoration(
                           color: scheme.primary.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(14),
@@ -1293,6 +1496,7 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                             const SizedBox(height: 10),
                             Text(
                               'Tap to upload photos or short video',
+                              textAlign: TextAlign.center,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: scheme.onSurface,
@@ -1309,20 +1513,31 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                             ),
                             const SizedBox(height: 12),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                _buildPickerActionButton(
-                                  icon: Icons.photo_outlined,
-                                  label: 'Add Photos',
-                                  onTap: _pickingMedia ? null : () => _pickPhotos(source: ImageSource.gallery),
-                                  color: scheme.primary,
+                                Expanded(
+                                  child: _buildPickerActionButton(
+                                    icon: Icons.photo_outlined,
+                                    label: 'Add Photos',
+                                    onTap: _pickingMedia
+                                        ? null
+                                        : () => _pickPhotos(
+                                            source: ImageSource.gallery,
+                                          ),
+                                    color: scheme.primary,
+                                  ),
                                 ),
                                 const SizedBox(width: 10),
-                                _buildPickerActionButton(
-                                  icon: Icons.videocam_outlined,
-                                  label: 'Add Video',
-                                  onTap: _pickingMedia ? null : () => _pickVideo(source: ImageSource.gallery),
-                                  color: AppColors.secondary,
+                                Expanded(
+                                  child: _buildPickerActionButton(
+                                    icon: Icons.videocam_outlined,
+                                    label: 'Add Video',
+                                    onTap: _pickingMedia
+                                        ? null
+                                        : () => _pickVideo(
+                                            source: ImageSource.gallery,
+                                          ),
+                                    color: AppColors.secondary,
+                                  ),
                                 ),
                               ],
                             ),
@@ -1348,7 +1563,10 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
               trailing: TextButton.icon(
                 onPressed: _isLocating ? null : _refreshToCurrentLocation,
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
@@ -1359,7 +1577,10 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.my_location_rounded, size: 15),
-                label: const Text('Locate Me', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                label: const Text(
+                  'Locate Me',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1369,35 +1590,52 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                     controller: _addressController,
                     maxLines: 2,
                     decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      prefixIcon: const Icon(Icons.place_outlined, color: AppColors.primary),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.place_outlined,
+                        color: AppColors.primary,
+                      ),
                       suffixIcon: _isGeocoding
                           ? const Padding(
                               padding: EdgeInsets.all(12),
                               child: SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             )
                           : null,
                       hintText: 'House / Flat No., Landmark, Street Address...',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                        borderSide: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                        ),
                       ),
                     ),
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty ? 'Please enter service address' : null,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Please enter service address'
+                        : null,
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.touch_app_outlined, size: 14, color: AppColors.primary),
+                      const Icon(
+                        Icons.touch_app_outlined,
+                        size: 14,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -1454,7 +1692,10 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                             top: 10,
                             left: 10,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.black87,
                                 borderRadius: BorderRadius.circular(20),
@@ -1467,13 +1708,19 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                                     height: 12,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation(
+                                        Colors.white,
+                                      ),
                                     ),
                                   ),
                                   SizedBox(width: 8),
                                   Text(
                                     'Updating address…',
-                                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1497,6 +1744,38 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                     children: [
                       Expanded(
                         child: Text(
+                          'Emergency SOS (priority dispatch)',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Switch(
+                        value: _isEmergency,
+                        activeTrackColor: Colors.red.withValues(alpha: 0.5),
+                        onChanged: (val) {
+                          setState(() {
+                            _isEmergency = val;
+                            if (val) _isScheduled = false;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  if (_isEmergency)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Platform SOS surcharge applies. Price not set by worker.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
                           'Schedule for later?',
                           style: theme.textTheme.bodyLarge?.copyWith(
                             fontWeight: FontWeight.w600,
@@ -1505,11 +1784,13 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       ),
                       Switch(
                         value: _isScheduled,
-                        onChanged: (val) {
-                          setState(() {
-                            _isScheduled = val;
-                          });
-                        },
+                        onChanged: _isEmergency
+                            ? null
+                            : (val) {
+                                setState(() {
+                                  _isScheduled = val;
+                                });
+                              },
                       ),
                     ],
                   ),
@@ -1524,28 +1805,41 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                                 context: context,
                                 initialDate: _scheduledDate ?? DateTime.now(),
                                 firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 7)),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 7),
+                                ),
                               );
                               if (date != null) {
                                 setState(() => _scheduledDate = date);
                               }
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
+                                border: Border.all(
+                                  color: scheme.outline.withValues(alpha: 0.3),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.calendar_month, size: 20, color: scheme.primary),
+                                  Icon(
+                                    Icons.calendar_month,
+                                    size: 20,
+                                    color: scheme.primary,
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     _scheduledDate != null
                                         ? '${_scheduledDate!.day}/${_scheduledDate!.month}/${_scheduledDate!.year}'
                                         : 'Select Date',
                                     style: TextStyle(
-                                      color: _scheduledDate != null ? scheme.onSurface : theme.hintColor,
+                                      color: _scheduledDate != null
+                                          ? scheme.onSurface
+                                          : theme.hintColor,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
@@ -1567,21 +1861,32 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                               }
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
+                                border: Border.all(
+                                  color: scheme.outline.withValues(alpha: 0.3),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.access_time, size: 20, color: scheme.primary),
+                                  Icon(
+                                    Icons.access_time,
+                                    size: 20,
+                                    color: scheme.primary,
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     _scheduledTime != null
                                         ? _scheduledTime!.format(context)
                                         : 'Select Time',
                                     style: TextStyle(
-                                      color: _scheduledTime != null ? scheme.onSurface : theme.hintColor,
+                                      color: _scheduledTime != null
+                                          ? scheme.onSurface
+                                          : theme.hintColor,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
@@ -1599,13 +1904,15 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
             const SizedBox(height: 16),
 
             // Cooperative Federation Affiliation
-            if (_worker?.federationName != null && _worker!.federationName!.isNotEmpty)
+            if (_worker?.federationName != null &&
+                _worker!.federationName!.isNotEmpty)
               CooperativeFederationBadge(
                 federationName: _worker!.federationName!,
               )
             else
               const CooperativeFederationBadge(
-                federationName: 'National Labour Cooperative Federation of India (NLCF)',
+                federationName:
+                    'National Labour Cooperative Federation of India (NLCF)',
               ),
 
             const SizedBox(height: 16),
@@ -1639,7 +1946,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
               decoration: BoxDecoration(
                 color: scheme.surface,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: scheme.outline.withValues(alpha: 0.15)),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.15),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.05),
@@ -1652,26 +1961,36 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                 children: [
                   if (selectedService != null)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Base Visiting / Diagnosis Fee',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                            Text(
-                              '₹${selectedService.priceFrom.toStringAsFixed(0)}',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: scheme.primary,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Base Visiting / Diagnosis Fee',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
                               ),
-                            ),
-                          ],
+                              Text(
+                                '₹${selectedService.priceFrom.toStringAsFixed(0)}',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                  color: scheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: scheme.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
@@ -1711,20 +2030,24 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
     final allItems = <_MediaItem>[];
 
     for (var i = 0; i < _photos.length; i++) {
-      allItems.add(_MediaItem(
-        path: _photos[i].path,
-        name: _photos[i].name,
-        isVideo: false,
-        index: i,
-      ));
+      allItems.add(
+        _MediaItem(
+          path: _photos[i].path,
+          name: _photos[i].name,
+          isVideo: false,
+          index: i,
+        ),
+      );
     }
     for (var i = 0; i < _videos.length; i++) {
-      allItems.add(_MediaItem(
-        path: _videos[i].path,
-        name: _videos[i].name,
-        isVideo: true,
-        index: i,
-      ));
+      allItems.add(
+        _MediaItem(
+          path: _videos[i].path,
+          name: _videos[i].name,
+          isVideo: true,
+          index: i,
+        ),
+      );
     }
 
     final leftWidgets = <Widget>[];
@@ -1764,7 +2087,11 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                       color: scheme.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.collections_rounded, size: 14, color: scheme.primary),
+                    child: Icon(
+                      Icons.collections_rounded,
+                      size: 14,
+                      color: scheme.primary,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -1798,7 +2125,11 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
     );
   }
 
-  Widget _buildMasonryCard(BuildContext context, _MediaItem item, double height) {
+  Widget _buildMasonryCard(
+    BuildContext context,
+    _MediaItem item,
+    double height,
+  ) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isVideo = item.isVideo;
@@ -1880,20 +2211,22 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
             left: 8,
             child: IgnorePointer(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 3.5,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.white24,
-                    width: 1,
-                  ),
+                  border: Border.all(color: Colors.white24, width: 1),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isVideo ? Icons.videocam_rounded : Icons.photo_camera_rounded,
+                      isVideo
+                          ? Icons.videocam_rounded
+                          : Icons.photo_camera_rounded,
                       size: 11,
                       color: Colors.white,
                     ),
@@ -1920,10 +2253,16 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
             bottom: 0,
             child: IgnorePointer(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.85),
+                    ],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
@@ -1944,7 +2283,10 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                     ),
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.22),
                         borderRadius: BorderRadius.circular(6),
@@ -1953,7 +2295,9 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            isVideo ? Icons.play_arrow_rounded : Icons.fullscreen_rounded,
+                            isVideo
+                                ? Icons.play_arrow_rounded
+                                : Icons.fullscreen_rounded,
                             color: Colors.white,
                             size: 12,
                           ),
@@ -2093,7 +2437,10 @@ class _SectionCard extends StatelessWidget {
               ),
               if (badge != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: iconColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -2107,7 +2454,7 @@ class _SectionCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              ?trailing,
+              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 14),
@@ -2120,10 +2467,7 @@ class _SectionCard extends StatelessWidget {
 
 /// Immersive full-screen image viewer with pinch-to-zoom and pan
 class _FullScreenImageViewer extends StatelessWidget {
-  const _FullScreenImageViewer({
-    required this.imagePath,
-    required this.title,
-  });
+  const _FullScreenImageViewer({required this.imagePath, required this.title});
 
   final String imagePath;
   final String title;
@@ -2162,7 +2506,11 @@ class _FullScreenImageViewer extends StatelessWidget {
                     File(imagePath),
                     fit: BoxFit.contain,
                     errorBuilder: (_, error, stack) => const Center(
-                      child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                      child: Icon(
+                        Icons.broken_image,
+                        color: Colors.white54,
+                        size: 64,
+                      ),
                     ),
                   ),
                 ),
@@ -2192,10 +2540,7 @@ class _FullScreenImageViewer extends StatelessWidget {
 
 /// Interactive full-screen video player dialog with playback controls
 class _FullScreenVideoPlayer extends StatefulWidget {
-  const _FullScreenVideoPlayer({
-    required this.videoPath,
-    required this.title,
-  });
+  const _FullScreenVideoPlayer({required this.videoPath, required this.title});
 
   final String videoPath;
   final String title;
@@ -2357,27 +2702,44 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                                 color: Colors.white.withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.videocam_off_rounded, color: Colors.white70, size: 42),
+                              child: const Icon(
+                                Icons.videocam_off_rounded,
+                                color: Colors.white70,
+                                size: 42,
+                              ),
                             ),
                             const SizedBox(height: 16),
                             const Text(
                               'Unable to Play Video',
-                              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              _errorMessage ?? 'An error occurred while initializing video player.',
-                              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+                              _errorMessage ??
+                                  'An error occurred while initializing video player.',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 20),
                             ElevatedButton.icon(
                               onPressed: () => Navigator.pop(context),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.2,
+                                ),
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                               icon: const Icon(Icons.close_rounded, size: 18),
                               label: const Text('Dismiss'),
@@ -2386,26 +2748,31 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                         ),
                       )
                     : (_isInitialized && controller != null)
-                        ? AspectRatio(
-                            aspectRatio: controller.value.aspectRatio,
-                            child: VideoPlayer(controller),
-                          )
-                        : const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(color: Colors.white),
-                              SizedBox(height: 16),
-                              Text(
-                                'Loading video...',
-                                style: TextStyle(color: Colors.white70, fontSize: 13),
-                              ),
-                            ],
+                    ? AspectRatio(
+                        aspectRatio: controller.value.aspectRatio,
+                        child: VideoPlayer(controller),
+                      )
+                    : const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Colors.white),
+                          SizedBox(height: 16),
+                          Text(
+                            'Loading video...',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
                           ),
+                        ],
+                      ),
               ),
             ),
 
             // Big Center Play/Pause Indicator on pause or toggle
-            if (_isInitialized && controller != null && (!controller.value.isPlaying || _showControls))
+            if (_isInitialized &&
+                controller != null &&
+                (!controller.value.isPlaying || _showControls))
               IgnorePointer(
                 child: Center(
                   child: AnimatedOpacity(
@@ -2437,7 +2804,10 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                 opacity: _showControls ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 250),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
@@ -2458,13 +2828,20 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                           onTap: () => Navigator.pop(context),
                           child: const Padding(
                             padding: EdgeInsets.all(8),
-                            child: Icon(Icons.arrow_back, color: Colors.white, size: 20),
+                            child: Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.secondary,
                           borderRadius: BorderRadius.circular(6),
@@ -2493,7 +2870,10 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -2512,11 +2892,16 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                   opacity: _showControls ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 250),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF1E293B).withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.15),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.4),
@@ -2536,7 +2921,9 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                           colors: VideoProgressColors(
                             playedColor: AppColors.primary,
                             bufferedColor: Colors.white.withValues(alpha: 0.25),
-                            backgroundColor: Colors.white.withValues(alpha: 0.12),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.12,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -2571,7 +2958,9 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                             // Mute/Unmute
                             IconButton(
                               icon: Icon(
-                                _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                                _isMuted
+                                    ? Icons.volume_off_rounded
+                                    : Icons.volume_up_rounded,
                                 color: Colors.white,
                                 size: 22,
                               ),

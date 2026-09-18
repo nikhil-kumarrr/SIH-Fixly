@@ -10,6 +10,10 @@ class AiAgentResponse {
   final Map<String, dynamic>? booking;
   final List<dynamic> bookings;
   final List<String> suggestedReplies;
+  /// Raw app action maps — parse with [parseAppActions] in UI.
+  final List<Map<String, dynamic>> appActions;
+  /// Preferred spoken line from backend (cleaner than markdown reply).
+  final String? speakHint;
 
   AiAgentResponse({
     required this.success,
@@ -23,6 +27,8 @@ class AiAgentResponse {
     this.booking,
     this.bookings = const [],
     this.suggestedReplies = const [],
+    this.appActions = const [],
+    this.speakHint,
   });
 
   factory AiAgentResponse.fromJson(Map<String, dynamic> json) {
@@ -59,6 +65,16 @@ class AiAgentResponse {
         ? rawSuggestions.map((e) => e.toString()).toList()
         : const <String>[];
 
+    final rawApp = json['appActions'];
+    final appActions = rawApp is List
+        ? rawApp
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : const <Map<String, dynamic>>[];
+
+    final hint = json['speakHint']?.toString().trim();
+
     return AiAgentResponse(
       success: json['success'] ?? false,
       reply: json['reply']?.toString() ?? '',
@@ -71,6 +87,8 @@ class AiAgentResponse {
       booking: rawBooking,
       bookings: rawBookings,
       suggestedReplies: suggestions,
+      appActions: appActions,
+      speakHint: (hint != null && hint.isNotEmpty) ? hint : null,
     );
   }
 

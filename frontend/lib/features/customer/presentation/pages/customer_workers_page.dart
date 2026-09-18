@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/network/api_config.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
@@ -125,7 +126,9 @@ class _WorkerListTile extends StatelessWidget {
                   Text(
                     worker.skills.isEmpty
                         ? 'Skilled worker'
-                        : worker.skills.take(3).join(' · '),
+                        : localizeCategoryList(
+                            worker.skills.take(3), context.l10n.locale)
+                          .join(' · '),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 4),

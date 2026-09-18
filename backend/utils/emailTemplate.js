@@ -8,7 +8,7 @@ export const generateOtpEmailHtml = (otp) => {
 
             <!-- Title -->
             <h2 style="color: #1a1a1a; margin-bottom: 10px; font-size: 24px; font-weight: 600;">
-                Verify Your CompanyName Account
+                Verify Your Fixly Account
             </h2>
 
             <!-- Message -->
@@ -25,7 +25,7 @@ export const generateOtpEmailHtml = (otp) => {
             <!-- Footer -->
             <p style="color: #94a3b8; font-size: 13px; margin-top: 20px;">
                 If you didn’t request this code, please ignore this email.<br/>
-                &copy; 2026 CompanyName. All rights reserved.
+                &copy; 2026 Fixly. All rights reserved.
             </p>
         </div>
     </div>

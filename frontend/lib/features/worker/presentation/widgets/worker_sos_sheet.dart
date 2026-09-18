@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme/app_radius.dart';
+import '../../../../core/network/api_exception.dart';
 import '../../../../core/utils/toast_utils.dart';
+import '../../../bookings/data/bookings_api_repository.dart';
 
 class WorkerSosSheet extends StatelessWidget {
-  const WorkerSosSheet({super.key});
+  const WorkerSosSheet({super.key, this.bookingId});
 
-  static void show(BuildContext context) {
+  final String? bookingId;
+
+  static void show(BuildContext context, {String? bookingId}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const WorkerSosSheet(),
+      builder: (_) => WorkerSosSheet(bookingId: bookingId),
     );
   }
 
@@ -36,17 +40,39 @@ class WorkerSosSheet extends StatelessWidget {
     }
   }
 
-  void _broadcastDistress(BuildContext context) {
-    Navigator.of(context).pop();
-    ToastUtils.showSuccess(
-      context: context,
-      message: '🚨 Emergency alert sent! Cooperative safety desk alerted with your location.',
-    );
+  Future<void> _broadcastDistress(BuildContext context) async {
+    final id = bookingId?.trim();
+    if (id == null || id.isEmpty) {
+      ToastUtils.showError(
+        context: context,
+        message: 'Open SOS from an active job to alert the customer.',
+      );
+      return;
+    }
+    try {
+      await BookingsApiRepository().triggerSos(id);
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      ToastUtils.showSuccess(
+        context: context,
+        message: 'SOS alert sent to customer / booking room.',
+      );
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ToastUtils.showError(context: context, message: e.message);
+    } catch (e) {
+      if (!context.mounted) return;
+      ToastUtils.showError(
+        context: context,
+        message: ApiException.fromError(e),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasJob = bookingId != null && bookingId!.trim().isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -65,7 +91,6 @@ class WorkerSosSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Drag handle
           Center(
             child: Container(
               width: 48,
@@ -77,8 +102,6 @@ class WorkerSosSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Header
           Row(
             children: [
               Container(
@@ -107,7 +130,9 @@ class WorkerSosSheet extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Immediate response for on-duty emergencies',
+                      hasJob
+                          ? 'In-job alert + national helplines'
+                          : 'Helplines — open from active job for in-app SOS',
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).hintColor,
@@ -123,31 +148,6 @@ class WorkerSosSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-
-          // Alert banner
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.shield_outlined, color: Colors.red, size: 20),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Tap any number below to directly connect with national services or federation response.',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 2x2 Emergency Grid
           Row(
             children: [
               Expanded(
@@ -194,65 +194,13 @@ class WorkerSosSheet extends StatelessWidget {
                   number: '18002001122',
                   icon: Icons.support_agent_rounded,
                   color: const Color(0xFF7C3AED),
-                  onTap: () => _call(context, '18002001122', 'Federation Safety Cell'),
+                  onTap: () =>
+                      _call(context, '18002001122', 'Federation Safety Cell'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-
-          // Fixly Rapid Response Contact Line
-          InkWell(
-            onTap: () => _call(context, '1800123456', 'Fixly 24x7 Safety Helpline'),
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.headset_mic_rounded, color: Colors.orange, size: 24),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Fixly 24x7 Safety Helpline',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        Text(
-                          'Toll-Free • Dispute & On-Duty Emergency',
-                          style: TextStyle(fontSize: 11, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'CALL NOW',
-                      style: TextStyle(
-                        color: Colors.orange,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
           const SizedBox(height: 16),
-
-          // One-tap Distress Broadcast Button
           ElevatedButton.icon(
             onPressed: () => _broadcastDistress(context),
             style: ElevatedButton.styleFrom(
@@ -265,9 +213,11 @@ class WorkerSosSheet extends StatelessWidget {
               elevation: 4,
             ),
             icon: const Icon(Icons.broadcast_on_personal_rounded),
-            label: const Text(
-              'Broadcast GPS Distress to Federation Desk',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            label: Text(
+              hasJob
+                  ? 'Send In-Job SOS Alert'
+                  : 'Broadcast GPS Distress (needs active job)',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
           ),
         ],
@@ -315,7 +265,8 @@ class _EmergencyCard extends StatelessWidget {
               children: [
                 Icon(icon, color: color, size: 24),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: color,
                     borderRadius: BorderRadius.circular(10),

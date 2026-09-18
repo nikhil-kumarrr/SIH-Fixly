@@ -82,20 +82,24 @@ export const serviceDiscovery = async (req, res) => {
         const text = String(req.body.text || req.body.problemDescription || '').toLowerCase();
         if (!text) return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'Text is required.' });
         
+        const isAiDiscoveryEnabled = String(process.env.AI_DISCOVERY_ENABLED ?? process.env.ENABLE_AI_DISCOVERY ?? 'false').toLowerCase() === 'true';
+
         let aiResult = null;
-        try {
-            const rawUrl = process.env.SERVICE_DISCOVERY_URL || process.env.AI_DISCOVERY_URL || 'http://127.0.0.1:8002';
-            const discoveryUrl = rawUrl.replace(/\/discover\/?$/, '').replace(/\/$/, '');
-            const response = await fetch(`${discoveryUrl}/discover`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text })
-            });
-            if (response.ok) {
-                aiResult = await response.json();
+        if (isAiDiscoveryEnabled) {
+            try {
+                const rawUrl = process.env.SERVICE_DISCOVERY_URL || process.env.AI_DISCOVERY_URL || 'http://127.0.0.1:8002';
+                const discoveryUrl = rawUrl.replace(/\/discover\/?$/, '').replace(/\/$/, '');
+                const response = await fetch(`${discoveryUrl}/discover`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                if (response.ok) {
+                    aiResult = await response.json();
+                }
+            } catch (err) {
+                console.error('AI Service Discovery failed, falling back to Node classifier:', err.message);
             }
-        } catch (err) {
-            console.error('AI Service Discovery failed, falling back to Node classifier:', err.message);
         }
 
         const services = await Service.find({ isActive: true }).lean();

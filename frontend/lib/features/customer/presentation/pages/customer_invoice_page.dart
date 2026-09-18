@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import 'package:printing/printing.dart';
 import '../../../../app/router/route_names.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/network/api_exception.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
@@ -28,8 +30,15 @@ class CustomerInvoicePage extends StatefulWidget {
   State<CustomerInvoicePage> createState() => _CustomerInvoicePageState();
 }
 
-class _CustomerInvoicePageState extends State<CustomerInvoicePage> {
+class _CustomerInvoicePageState extends State<CustomerInvoicePage>
+    with RefreshWhenNavigatedTo {
   late Future<BookingInvoice> _invoice;
+
+  @override
+  List<String> get refreshRoutePaths => [RouteNames.customerInvoice];
+
+  @override
+  void onScreenRefresh() => _reload();
 
   @override
   void initState() {
@@ -48,6 +57,14 @@ class _CustomerInvoicePageState extends State<CustomerInvoicePage> {
     return AppScaffold(
       title: 'Invoice',
       showBack: true,
+      fallbackPath: RouteNames.customerOrders,
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(RouteNames.customerOrders);
+        }
+      },
       body: FutureBuilder<BookingInvoice>(
         future: _invoice,
         builder: (context, snapshot) {
@@ -98,6 +115,15 @@ class _InvoiceContentState extends State<_InvoiceContent> {
     super.dispose();
   }
 
+  void _closeInvoice() {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    // Arrived via go() after rating — no stack to pop.
+    context.go(RouteNames.customerOrders);
+  }
+
   Future<void> _payWithRazorpay() async {
     final invoice = widget.invoice;
     if (invoice.totalAmount <= 0) {
@@ -134,8 +160,10 @@ class _InvoiceContentState extends State<_InvoiceContent> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isPaying = false);
-      final msg = e.toString().replaceFirst('Exception: ', '');
-      ToastUtils.showToast(context: context, message: msg);
+      ToastUtils.showToast(
+        context: context,
+        message: ApiException.fromError(e),
+      );
     }
   }
 
@@ -144,6 +172,9 @@ class _InvoiceContentState extends State<_InvoiceContent> {
     final invoice = widget.invoice;
     final fmt = NumberFormat('#,##0', 'en_IN');
     final dateFmt = DateFormat('dd MMM yyyy, h:mm a');
+
+    final logoBytes = await rootBundle.load('assets/app_name.png');
+    final logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
 
     final pdf = pw.Document();
 
@@ -158,27 +189,9 @@ class _InvoiceContentState extends State<_InvoiceContent> {
               // ── Header ──
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'FIXLY',
-                        style: pw.TextStyle(
-                          fontSize: 28,
-                          fontWeight: pw.FontWeight.bold,
-                          color: const PdfColor.fromInt(0xFF2563EB),
-                        ),
-                      ),
-                      pw.Text(
-                        'Professional Home Services',
-                        style: const pw.TextStyle(
-                          fontSize: 11,
-                          color: PdfColors.grey600,
-                        ),
-                      ),
-                    ],
-                  ),
+                  pw.Image(logoImage, height: 52),
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
@@ -405,6 +418,21 @@ class _InvoiceContentState extends State<_InvoiceContent> {
                           'Extra Parts',
                           'Rs. ${fmt.format(invoice.extraPartsTotal.toInt())}',
                         ),
+                      if (invoice.platformFee > 0)
+                        _pdfTotalRow(
+                          'Platform & Safety Fee',
+                          'Rs. ${fmt.format(invoice.platformFee.toInt())}',
+                        ),
+                      if (invoice.urgentFee > 0)
+                        _pdfTotalRow(
+                          'Urgent Fee',
+                          'Rs. ${fmt.format(invoice.urgentFee.toInt())}',
+                        ),
+                      if (invoice.couponDiscount > 0)
+                        _pdfTotalRow(
+                          'Coupon used (${invoice.couponCode ?? ''})',
+                          '-Rs. ${fmt.format(invoice.couponDiscount.toInt())}',
+                        ),
                       pw.Divider(color: PdfColors.grey400),
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -468,7 +496,7 @@ class _InvoiceContentState extends State<_InvoiceContent> {
               pw.SizedBox(height: 8),
               pw.Center(
                 child: pw.Text(
-                  'Thank you for choosing Fixly — India\'s trusted home service platform.',
+                  'Thank you for choosing Fixly - India\'s trusted home service platform.',
                   style: const pw.TextStyle(
                     fontSize: 10,
                     color: PdfColors.grey500,
@@ -554,51 +582,25 @@ class _InvoiceContentState extends State<_InvoiceContent> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryDark],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'FIXLY',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
+                  Image.asset(
+                    'assets/app_name.png',
+                    height: 48,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'SERVICE INVOICE',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                            color: AppColors.textPrimary,
-                            letterSpacing: 0.5,
-                          ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(
+                        'SERVICE INVOICE',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: AppColors.textPrimary,
+                          letterSpacing: 0.5,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Professional Home Services',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   _StatusBadge(status: invoice.paymentStatus ?? 'PENDING'),
@@ -667,7 +669,9 @@ class _InvoiceContentState extends State<_InvoiceContent> {
               if (invoice.jobStartedAt != null ||
                   invoice.jobCompletedAt != null) ...[
                 const SizedBox(height: 12),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     if (invoice.jobStartedAt != null)
                       _MetaPill(
@@ -676,9 +680,6 @@ class _InvoiceContentState extends State<_InvoiceContent> {
                             'Started ${dateFmt.format(invoice.jobStartedAt!.toLocal())}',
                         color: Colors.orange,
                       ),
-                    if (invoice.jobStartedAt != null &&
-                        invoice.jobCompletedAt != null)
-                      const SizedBox(width: 8),
                     if (invoice.jobCompletedAt != null)
                       _MetaPill(
                         icon: Icons.check_circle_outline_rounded,
@@ -746,6 +747,27 @@ class _InvoiceContentState extends State<_InvoiceContent> {
                 _SummaryRow(
                   label: 'Extra Parts Total',
                   value: '₹${fmt.format(invoice.extraPartsTotal.toInt())}',
+                ),
+              ],
+              if (invoice.platformFee > 0) ...[
+                const SizedBox(height: 6),
+                _SummaryRow(
+                  label: 'Platform & Safety Fee',
+                  value: '₹${fmt.format(invoice.platformFee.toInt())}',
+                ),
+              ],
+              if (invoice.urgentFee > 0) ...[
+                const SizedBox(height: 6),
+                _SummaryRow(
+                  label: 'Emergency / Urgent Fee',
+                  value: '₹${fmt.format(invoice.urgentFee.toInt())}',
+                ),
+              ],
+              if (invoice.couponDiscount > 0) ...[
+                const SizedBox(height: 6),
+                _SummaryRow(
+                  label: 'Coupon used (${invoice.couponCode ?? ''})',
+                  value: '-₹${fmt.format(invoice.couponDiscount.toInt())}',
                 ),
               ],
 
@@ -846,12 +868,16 @@ class _InvoiceContentState extends State<_InvoiceContent> {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          'Payment confirmed & verified',
-                          style: TextStyle(
-                            color: AppColors.success,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                        Expanded(
+                          child: Text(
+                            'Payment confirmed & verified',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ],
@@ -945,7 +971,7 @@ class _InvoiceContentState extends State<_InvoiceContent> {
             width: double.infinity,
             height: 48,
             child: OutlinedButton(
-              onPressed: () => context.pop(),
+              onPressed: _closeInvoice,
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.border),
                 shape: RoundedRectangleBorder(
@@ -961,7 +987,7 @@ class _InvoiceContentState extends State<_InvoiceContent> {
         ] else ...[
           const SizedBox(height: 10),
           TextButton(
-            onPressed: () => context.pop(),
+            onPressed: _closeInvoice,
             child: const Text(
               'Close Invoice',
               style: TextStyle(color: AppColors.textSecondary),
@@ -1471,13 +1497,18 @@ class _PlainActionButton extends StatelessWidget {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             icon,
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

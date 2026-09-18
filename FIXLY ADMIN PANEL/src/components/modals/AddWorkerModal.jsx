@@ -1,27 +1,38 @@
 import React, { useState } from 'react';
 import Modal from '../common/Modal';
 import { useApp } from '../../context/AppContext';
+import { OFFICIAL_CATEGORIES, getMergedCategories } from '../../data/services';
+import StateDistrictSelect from '../common/StateDistrictSelect';
 
 export default function AddWorkerModal({ isOpen, onClose }) {
-  const { addWorker } = useApp();
+  const { addWorker, services } = useApp();
 
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
     address: '',
-    city: 'Noida',
-    service: 'Plumbing',
+    state: 'Delhi',
+    district: 'South Delhi',
+    city: 'South Delhi',
+    service: 'Electrician',
     skills: '',
     experience: '5 Years',
     certifications: '',
     availability: 'Available',
-    hourlyRate: '₹350/hr',
+    rate: 200,
+    serviceRadiusKm: 15,
     idProof: 'Aadhaar Card',
     avatar: '',
   });
 
+  const [isCustomTrade, setIsCustomTrade] = useState(false);
+  const [customTrade, setCustomTrade] = useState('');
   const [errors, setErrors] = useState({});
+
+  const tradeOptions = React.useMemo(() => {
+    return getMergedCategories(services);
+  }, [services]);
 
   const validate = () => {
     const errs = {};
@@ -36,17 +47,25 @@ export default function AddWorkerModal({ isOpen, onClose }) {
     e.preventDefault();
     if (!validate()) return;
 
+    const effectiveTrade = isCustomTrade ? customTrade.trim() : formData.service?.trim();
+
     try {
       await addWorker({
         name: formData.name,
         email: formData.email || `${formData.name.toLowerCase().replace(/\s+/g, '')}@gigworker.com`,
         phone: formData.phone,
         password: 'WorkerPass123!',
-        category: formData.service || 'Plumbing',
-        hourlyRate: parseInt(formData.hourlyRate.replace(/\D/g, ''), 10) || 50,
+        category: effectiveTrade || 'Electrician',
+        rate: Number(formData.rate) || 200,
+        hourlyRate: Number(formData.rate) || 200,
+        serviceRadiusKm: Number(formData.serviceRadiusKm) || 15,
         experienceYears: parseInt(formData.experience.replace(/\D/g, ''), 10) || 1,
-        bio: `Professional ${formData.service} worker in ${formData.city}`,
-        skills: formData.skills ? formData.skills.split(',').map((s) => s.trim()) : ['General Service']
+        bio: `Professional ${effectiveTrade || 'Electrician'} worker in ${formData.district || formData.city || 'India'}`,
+        skills: formData.skills ? formData.skills.split(',').map((s) => s.trim()) : ['General Service'],
+        state: formData.state,
+        district: formData.district,
+        city: formData.district || formData.city,
+        address: formData.address,
       });
       onClose();
     } catch (err) {
@@ -137,31 +156,64 @@ export default function AddWorkerModal({ isOpen, onClose }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155', display: 'block', marginBottom: '4px' }}>
-              Primary Service Trade *
-            </label>
-            <select
-              value={formData.service}
-              onChange={(e) => setFormData({ ...formData, service: e.target.value })}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '13px',
-                backgroundColor: '#ffffff',
-              }}
-            >
-              <option value="Plumbing">Plumbing</option>
-              <option value="Electrical">Electrical</option>
-              <option value="Carpentry">Carpentry</option>
-              <option value="Cleaning">Cleaning</option>
-              <option value="AC Repair">AC Repair</option>
-              <option value="Caregiving">Caregiving</option>
-              <option value="Painting">Painting</option>
-              <option value="Driving">Driving</option>
-              <option value="Gardening">Gardening</option>
-            </select>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                Primary Service Trade *
+              </label>
+              {isCustomTrade ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomTrade(false);
+                    setCustomTrade('');
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  ← Select Existing
+                </button>
+              ) : null}
+            </div>
+
+            {isCustomTrade ? (
+              <input
+                type="text"
+                placeholder="Type new service/trade (e.g. Appliance Repair)..."
+                value={customTrade}
+                onChange={(e) => setCustomTrade(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #0284c7',
+                  fontSize: '13px',
+                  backgroundColor: '#f0f9ff',
+                }}
+              />
+            ) : (
+              <select
+                value={formData.service}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') {
+                    setIsCustomTrade(true);
+                  } else {
+                    setFormData({ ...formData, service: e.target.value });
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '13px',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                {tradeOptions.map((trade) => (
+                  <option key={trade} value={trade}>{trade}</option>
+                ))}
+                <option value="__custom__" style={{ fontWeight: '700', color: '#0284c7' }}>+ Create New Service / Trade...</option>
+              </select>
+            )}
           </div>
 
           <div>
@@ -204,16 +256,16 @@ export default function AddWorkerModal({ isOpen, onClose }) {
           {errors.skills && <span style={{ fontSize: '11px', color: '#ef4444' }}>{errors.skills}</span>}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
             <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155', display: 'block', marginBottom: '4px' }}>
-              Address / Sector
+              Base Service Rate (₹ / booking)
             </label>
             <input
-              type="text"
-              placeholder="e.g. Sector 62"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              type="number"
+              min="50"
+              value={formData.rate}
+              onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
               style={{
                 width: '100%',
                 padding: '8px 12px',
@@ -226,28 +278,53 @@ export default function AddWorkerModal({ isOpen, onClose }) {
 
           <div>
             <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155', display: 'block', marginBottom: '4px' }}>
-              City
+              Service Radius (km)
             </label>
-            <select
-              value={formData.city}
-              onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={formData.serviceRadiusKm}
+              onChange={(e) => setFormData({ ...formData, serviceRadiusKm: e.target.value })}
               style={{
                 width: '100%',
                 padding: '8px 12px',
                 borderRadius: '8px',
                 border: '1px solid #cbd5e1',
                 fontSize: '13px',
-                backgroundColor: '#ffffff',
               }}
-            >
-              <option value="Noida">Noida</option>
-              <option value="New Delhi">New Delhi</option>
-              <option value="Gurgaon">Gurgaon</option>
-              <option value="Ghaziabad">Ghaziabad</option>
-              <option value="Mumbai">Mumbai</option>
-              <option value="Pune">Pune</option>
-            </select>
+            />
           </div>
+        </div>
+
+        <div>
+          <StateDistrictSelect
+            selectedState={formData.state}
+            selectedDistrict={formData.district}
+            onStateChange={(st) => setFormData({ ...formData, state: st, district: '', city: '' })}
+            onDistrictChange={(dist) => setFormData({ ...formData, district: dist, city: dist })}
+            stateLabel="Worker Home State *"
+            districtLabel="Worker Home District *"
+          />
+        </div>
+
+        <div>
+          <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155', display: 'block', marginBottom: '4px' }}>
+            Street Address / Local Area (optional)
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. Sector 62, Indirapuram"
+            value={formData.address}
+            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              fontSize: '13px',
+            }}
+          />
         </div>
 
         <div>

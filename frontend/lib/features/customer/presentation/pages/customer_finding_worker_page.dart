@@ -5,7 +5,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/widgets/core_widgets.dart';
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../shared/models/models.dart';
 import '../cubit/booking_flow_cubit.dart';
 
@@ -57,10 +60,13 @@ class _CustomerFindingWorkerPageState extends State<CustomerFindingWorkerPage> {
       listenWhen: (previous, current) => previous.step != current.step,
       listener: (context, state) {
         if (state.step == BookingStatus.accepted) {
+          ScreenRefresh.mark(RouteNames.customerWorkerAccepted);
           context.pushReplacement(RouteNames.customerWorkerAccepted);
         } else if (state.step == BookingStatus.arrived) {
+          ScreenRefresh.mark(RouteNames.customerWorkerArrived);
           context.pushReplacement(RouteNames.customerWorkerArrived);
         } else if (state.step == BookingStatus.inProgress) {
+          ScreenRefresh.mark(RouteNames.customerWorkStarted);
           context.pushReplacement(RouteNames.customerWorkStarted);
         }
       },
@@ -137,7 +143,10 @@ class _CustomerFindingWorkerPageState extends State<CustomerFindingWorkerPage> {
                             ),
                           if (booking.serviceCategory != null)
                             Text(
-                              booking.serviceCategory!,
+                              localizeCategory(
+                                booking.serviceCategory,
+                                context.l10n.locale,
+                              ),
                               style: const TextStyle(color: Colors.grey),
                             ),
                           const SizedBox(height: 8),

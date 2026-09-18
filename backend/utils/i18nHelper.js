@@ -31,9 +31,19 @@ export const localizeServices = async (services, lang = 'en') => {
 
 export const localizeCategories = (categories, lang = 'en') => {
     if (!Array.isArray(categories)) return [];
-    if (!lang || lang === 'en') return categories;
-    return categories.map(cat => {
-        const lower = String(cat).toLowerCase().trim();
-        return CATEGORY_DICTIONARY[lower]?.[lang] || cat;
-    });
+    return categories.map(cat => localizeCategory(cat, lang));
+};
+
+/** Single category/skill slug → label in request language (dict, 0ms). */
+export const localizeCategory = (raw, lang = 'en') => {
+    if (raw == null) return raw;
+    const value = String(raw).trim();
+    if (!value) return value;
+    if (!lang || lang === 'en') {
+        // Still normalize known slugs to English display names.
+        const lower = value.toLowerCase();
+        return CATEGORY_DICTIONARY[lower]?.en || value;
+    }
+    const lower = value.toLowerCase();
+    return CATEGORY_DICTIONARY[lower]?.[lang] || CATEGORY_DICTIONARY[lower]?.en || value;
 };

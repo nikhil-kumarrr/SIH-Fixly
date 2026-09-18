@@ -7785,7 +7785,7 @@
         "tags": [
           "AI Assistant"
         ],
-        "description": "Interact with Hey Flexi Conversational AI voice/text booking assistant",
+        "description": "Interact with Hey Fixly Conversational AI voice/text booking assistant",
         "parameters": [
           {
             "name": "authorization",
@@ -8108,7 +8108,7 @@
         "tags": [
           "General"
         ],
-        "description": "Interact with Hey Flexi Conversational AI voice/text booking assistant",
+        "description": "Interact with Hey Fixly Conversational AI voice/text booking assistant",
         "parameters": [
           {
             "name": "authorization",

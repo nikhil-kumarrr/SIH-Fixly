@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToast } from './ToastContext';
+import { toTitleCase } from '../data/services';
 
 const AppContext = createContext(null);
 
@@ -197,16 +198,16 @@ export function AppProvider({ children }) {
           email: w.email,
           phone: w.phone || '—',
           avatar: w.avatar || '',
-          category: w.workerProfile?.category || '—',
-          service: w.workerProfile?.category || '—',
+          category: w.workerProfile?.category ? toTitleCase(w.workerProfile.category) : '—',
+          service: w.workerProfile?.category ? toTitleCase(w.workerProfile.category) : '—',
           skills: Array.isArray(w.workerProfile?.skills) && w.workerProfile.skills.length > 0
             ? w.workerProfile.skills
             : [],
           location: w.savedAddresses?.[0]?.addressLine || '—',
           city: w.savedAddresses?.[0]?.city || '—',
-          coordinates,
-          hourlyRate: w.workerProfile?.hourlyRate != null
-            ? `₹${w.workerProfile.hourlyRate}/hr`
+          rate: w.workerProfile?.rate ?? w.workerProfile?.hourlyRate ?? null,
+          hourlyRate: (w.workerProfile?.rate != null || w.workerProfile?.hourlyRate != null)
+            ? `₹${w.workerProfile?.rate ?? w.workerProfile?.hourlyRate}`
             : '—',
           verification: w.isVerified ? 'Verified' : (w.kycDocuments?.status === 'rejected' ? 'Rejected' : 'Pending'),
           isVerified: w.isVerified,
@@ -238,9 +239,11 @@ export function AppProvider({ children }) {
       if (res.success) {
         showToast('success', 'Worker application verified successfully');
         fetchWorkers({ page: workersPagination.page, limit: workersPagination.limit });
+        return res;
       }
     } catch (err) {
       showToast('error', err.response?.data?.message || 'Failed to verify worker');
+      throw err;
     }
   };
 
@@ -257,9 +260,11 @@ export function AppProvider({ children }) {
       if (res.success) {
         showToast('error', 'Worker application rejected');
         fetchWorkers({ page: workersPagination.page, limit: workersPagination.limit });
+        return res;
       }
     } catch (err) {
       showToast('error', err.response?.data?.message || 'Failed to update worker status');
+      throw err;
     }
   };
 
@@ -303,13 +308,17 @@ export function AppProvider({ children }) {
           customer: b.customer?.name || 'Customer',
           customerId: b.customer?._id,
           customerPhone: b.customer?.phone || 'N/A',
+          customerAddress: b.serviceAddress?.addressLine || 'Client Location',
           worker: b.worker?.name || 'Unassigned',
           workerId: b.worker?._id,
           workerPhone: b.worker?.phone || 'N/A',
-          service: b.service?.title || 'Home Service',
-          serviceCategory: b.service?.category || 'General',
+          service: toTitleCase(b.service?.title || 'Home Service'),
+          serviceCategory: toTitleCase(b.service?.category || 'General'),
           amount: `₹${b.invoice?.totalAmount || b.service?.basePrice || 0}`,
           rawAmount: b.invoice?.totalAmount || b.service?.basePrice || 0,
+          couponCode: b.invoice?.couponCode || null,
+          couponDiscount: Number(b.invoice?.couponDiscount) || 0,
+          paymentStatus: b.invoice?.paymentStatus || 'PENDING',
           status: b.status,
           date: new Date(b.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
           scheduledSlot: b.scheduledTime ? new Date(b.scheduledTime).toLocaleString('en-IN') : 'Standard Slot',
@@ -357,8 +366,8 @@ export function AppProvider({ children }) {
       if (res.success) {
         const formatted = res.data.map(s => ({
           id: s._id,
-          name: s.title,
-          category: s.category,
+          name: toTitleCase(s.title || s.name || ''),
+          category: toTitleCase(s.category || ''),
           basePrice: `₹${s.basePrice}`,
           rawPrice: s.basePrice,
           estimatedTime: s.estimatedTime || '1 Hour',
@@ -413,13 +422,29 @@ export function AppProvider({ children }) {
     }
   };
 
+  const syncServicesCache = async () => {
+    try {
+      const res = await api.syncServicesCache();
+      if (res.success) {
+        showToast('success', 'Redis cache refreshed and synchronized for all apps!');
+        fetchServices({ page: servicesPagination.page, limit: servicesPagination.limit });
+      }
+    } catch (err) {
+      showToast('error', err.response?.data?.message || 'Failed to sync Redis cache');
+    }
+  };
+
   // --- PAYMENTS ACTIONS ---
   const fetchPayments = useCallback(async (params = {}) => {
     try {
       setLoading(true);
       const res = await api.getPayments(params);
       if (res.success) {
-        const formatted = res.data.map(p => ({
+        const formatted = res.data.map(p => {
+          const inv = p.bookingId?.invoice || {};
+          const couponCode = inv.couponCode || null;
+          const couponDiscount = Number(inv.couponDiscount) || 0;
+          return {
           id: p.paymentId || p.orderId || p._id,
           rawId: p._id,
           orderId: p.orderId,
@@ -427,14 +452,18 @@ export function AppProvider({ children }) {
           customer: p.customerId?.name || 'Customer',
           worker: p.workerId?.name || 'Worker',
           bookingId: p.bookingId?.bookingId || p.bookingId?._id || 'Booking',
+          service: p.bookingId?.service?.title || 'Service',
           amount: `₹${p.amount}`,
           rawAmount: p.amount,
+          couponCode,
+          couponDiscount,
           welfareCut: `₹${Math.round(p.amount * 0.05)}`,
           workerPayout: `₹${Math.round(p.amount * 0.95)}`,
           status: p.status === 'success' ? 'Completed' : (p.status === 'failed' ? 'Failed' : 'Pending'),
           paymentMethod: p.paymentMethod || 'Razorpay',
           date: new Date(p.createdAt).toLocaleDateString('en-IN')
-        }));
+        };
+        });
         setPayments(formatted);
         setPaymentsPagination(res.pagination || { page: 1, limit: 10, total: formatted.length, totalPages: 1 });
       }
@@ -595,7 +624,7 @@ export function AppProvider({ children }) {
       fetchSettings();
       fetchBookings({ page: 1, limit: 100 });
       fetchServices({ page: 1, limit: 50 });
-      fetchWorkers({ page: 1, limit: 50, isVerified: 'true' });
+      fetchWorkers({ page: 1, limit: 50 });
     }
   }, [token, fetchDashboardStats, fetchSettings, fetchBookings, fetchServices, fetchWorkers]);
 
@@ -645,6 +674,7 @@ export function AppProvider({ children }) {
         addService,
         updateService,
         deleteService,
+        syncServicesCache,
 
         payments,
         paymentsPagination,

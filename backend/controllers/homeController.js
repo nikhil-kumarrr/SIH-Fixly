@@ -4,9 +4,9 @@ dotenv.config();
 import redis from '../config/redis.js';
 import Service from '../models/Service.js';
 import Banner from '../models/Banner.js';
-import { seedDefaultBannersIfEmpty } from './bannerController.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
 import { getRequestLanguage, localizeServices, localizeService, localizeCategories } from '../utils/i18nHelper.js';
+import { invalidateHomeCache } from '../utils/homeCache.js';
 
 // Screen 1: Home Dashboard Data (Redis Cached per language)
 export const getHomeData = async (req, res) => {
@@ -22,7 +22,6 @@ export const getHomeData = async (req, res) => {
         const limit = parseInt(process.env.HOME_SERVICES_LIMIT, 10) || 6;
         const ttl = parseInt(process.env.CACHE_TTL_HOME, 10) || 3600;
 
-        await seedDefaultBannersIfEmpty();
         const rawCategories = await Service.distinct('category');
         const rawTopServices = await Service.find({ isActive: true }).limit(limit).lean();
         const banners = await Banner.find({ isActive: true }).sort({ priority: -1, createdAt: -1 }).lean();
@@ -35,10 +34,7 @@ export const getHomeData = async (req, res) => {
             rawCategories,
             topServices,
             banners,
-            featuredOffers: banners.length > 0 ? banners : [
-                { id: 'off_1', title: 'Spring Cleaning Special', discount: '20% OFF', code: 'SPRING20' },
-                { id: 'off_2', title: 'First-Time User Discount', discount: '15% OFF', code: 'NEW15' }
-            ]
+            featuredOffers: banners,
         };
 
         await redis.set(cacheKey, JSON.stringify(responsePayload), 'EX', ttl);
@@ -54,7 +50,10 @@ export const getCategories = async (req, res) => {
     try {
         const lang = getRequestLanguage(req);
         const cacheKey = `app:services:categories:${lang}`;
-        const cachedData = await redis.get(cacheKey);
+        let cachedData = await redis.get(cacheKey);
+        if (!cachedData && (lang === 'en' || !lang)) {
+            cachedData = await redis.get('app:services:categories');
+        }
 
         if (cachedData) {
             return res.status(200).json({ success: true, source: 'cache', categories: JSON.parse(cachedData) });
@@ -189,9 +188,9 @@ export const createCategory = async (req, res) => {
             } catch (_) {}
         }
 
-        // Clear dashboard cache
+        // Clear dashboard cache (keys are app:home:dashboard:{lang})
         try {
-            await redis.del('app:home:dashboard');
+            await invalidateHomeCache();
         } catch (_) {}
 
         return res.status(201).json({

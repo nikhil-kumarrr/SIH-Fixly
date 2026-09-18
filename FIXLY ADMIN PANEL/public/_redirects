@@ -1,1 +1,2 @@
-/* /index.html 200
+/api/*  http://fexily-lb-380632449.ap-south-1.elb.amazonaws.com/api/:splat  200!
+/*      /index.html  200

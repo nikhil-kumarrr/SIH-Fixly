@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../auth/data/auth_api_repository.dart';
 import '../../../workers/data/workers_api_repository.dart';
@@ -489,9 +490,64 @@ class _WorkerCooperativePageState extends State<WorkerCooperativePage> {
             valueColor: const Color(0xFF10B981),
             isDark: isDark,
           ),
+          if (_society == null) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _joinSocietyFlow,
+              icon: const Icon(Icons.group_add_rounded),
+              label: const Text('Join a primary society'),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _joinSocietyFlow() async {
+    try {
+      final list = await _workersRepo.fetchSocieties();
+      if (!mounted) return;
+      if (list.isEmpty) {
+        ToastUtils.showToast(
+          context: context,
+          message: 'No active societies available',
+        );
+        return;
+      }
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: list.length,
+            itemBuilder: (_, i) {
+              final s = list[i];
+              return ListTile(
+                title: Text(s['name']?.toString() ?? 'Society'),
+                subtitle: Text(
+                  '${s['district'] ?? ''} · ${s['state'] ?? ''}',
+                ),
+                onTap: () => Navigator.pop(ctx, s),
+              );
+            },
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+      final id = (selected['_id'] ?? selected['id'])?.toString();
+      if (id == null) return;
+      await _workersRepo.joinSociety(id);
+      if (!mounted) return;
+      ToastUtils.showSuccess(
+        context: context,
+        message: 'Joined ${selected['name'] ?? 'society'}',
+      );
+      setState(() => _isLoading = true);
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ToastUtils.showError(context: context, message: e.toString());
+    }
   }
 
   // -------------------------------------------------------------

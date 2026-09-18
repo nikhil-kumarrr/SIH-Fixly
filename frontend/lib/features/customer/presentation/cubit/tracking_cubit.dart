@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/constants/map_constants.dart';
@@ -22,16 +24,35 @@ class TrackingCubit extends Cubit<TrackingState> {
   StreamSubscription<bool>? _connectionSubscription;
   Timer? _pollTimer;
   Timer? _animationTimer;
+  int _startGeneration = 0;
+
+  /// Latest GPS we are animating toward / have accepted.
+  MapCoordinate? _acceptedTarget;
+  /// Newer socket point waiting until current ease finishes.
+  MapCoordinate? _queuedTarget;
+  bool _animating = false;
+
+  bool get _alive => !isClosed;
+
+  void _safeEmit(TrackingState state) {
+    if (!_alive) return;
+    emit(state);
+  }
 
   Future<void> startTracking({
     String? bookingId,
     String? workerName,
     MapCoordinate? destination,
   }) async {
+    final gen = ++_startGeneration;
     _pollTimer?.cancel();
     _animationTimer?.cancel();
+    _animating = false;
+    _acceptedTarget = null;
+    _queuedTarget = null;
     await _socketSubscription?.cancel();
     await _connectionSubscription?.cancel();
+    if (!_alive || gen != _startGeneration) return;
 
     var target = destination;
     var name = workerName;
@@ -45,6 +66,7 @@ class TrackingCubit extends Cubit<TrackingState> {
     if (bookingId != null) {
       try {
         final booking = await _bookings.getById(bookingId);
+        if (!_alive || gen != _startGeneration) return;
         target ??= booking.customerLat == null || booking.customerLng == null
             ? null
             : MapCoordinate(
@@ -55,20 +77,21 @@ class TrackingCubit extends Cubit<TrackingState> {
         name ??= booking.workerName;
         serviceTitle = booking.serviceTitle;
         arrivalOtp = booking.arrivalOtp;
+        workerRating = booking.workerRating;
+        workerAvatar = booking.workerAvatar;
 
-        // Try getting latest worker position from DB/API
         try {
           initialWorkerPos = await _bookings.trackWorkerPosition(bookingId);
         } catch (_) {}
+        if (!_alive || gen != _startGeneration) return;
       } catch (_) {}
     }
 
-    // Ensure customer position falls back to current device if null
+    if (!_alive || gen != _startGeneration) return;
+
     target ??= AppLocation.instance.coordinateOrNull ?? MapConstants.current;
 
-    // Separate worker position from customer location to prevent pinpoint stacking
     if (initialWorkerPos == null && target != null) {
-      // Offset worker departure point slightly southwest of customer (~1.2 km away)
       initialWorkerPos = MapCoordinate(
         lat: target.lat - 0.010,
         lng: target.lng - 0.009,
@@ -86,7 +109,9 @@ class TrackingCubit extends Cubit<TrackingState> {
 
     final initialEta = TrackingHelpers.estimateEtaMinutes(initialDistance);
 
-    emit(
+    _acceptedTarget = initialWorkerPos;
+
+    _safeEmit(
       TrackingState(
         isActive: bookingId != null,
         bookingId: bookingId,
@@ -94,7 +119,7 @@ class TrackingCubit extends Cubit<TrackingState> {
         serviceTitle: serviceTitle,
         arrivalOtp: arrivalOtp,
         workerPhone: workerPhone,
-        workerRating: workerRating ?? 4.8,
+        workerRating: workerRating,
         workerAvatar: workerAvatar,
         workerPosition: initialWorkerPos,
         startPosition: initialWorkerPos,
@@ -102,93 +127,171 @@ class TrackingCubit extends Cubit<TrackingState> {
         workerHeading: initialHeading,
         distanceMeters: initialDistance,
         etaMinutes: initialEta,
-        phase: initialDistance <= 200 ? TrackingPhase.arrived : TrackingPhase.enRoute,
+        phase: initialDistance <= 200
+            ? TrackingPhase.arrived
+            : TrackingPhase.enRoute,
         isSocketConnected: false,
       ),
     );
 
+    if (!_alive || gen != _startGeneration) return;
     if (bookingId == null) return;
 
-    // Load initial driving route
     if (initialWorkerPos != null && target != null) {
-      _loadRoute(initialWorkerPos, target);
+      unawaited(_loadRoute(initialWorkerPos, target, gen));
     }
 
-    // Connect real-time socket
     _socket.connect(bookingId);
     _socketSubscription = _socket.positions.listen((pos) {
+      if (!_alive || gen != _startGeneration) return;
       _lastSocketTime = DateTime.now();
-      _onPosition(pos);
+      _onPosition(pos, source: _PosSource.socket);
     });
     _connectionSubscription = _socket.connectionState.listen((connected) {
-      if (!isClosed) emit(state.copyWith(isSocketConnected: connected));
+      if (!_alive || gen != _startGeneration) return;
+      _safeEmit(state.copyWith(isSocketConnected: connected));
     });
 
-    // Fallback polling every 8s — only used if socket is disconnected or hasn't emitted recently
+    // Poll only as cold fallback when socket is dead — never fight live GPS.
     _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
-      final now = DateTime.now();
-      if (_socket.isConnected &&
-          _lastSocketTime != null &&
-          now.difference(_lastSocketTime!).inSeconds < 10) {
-        // Socket is alive and fresh; skip stale HTTP DB poll to avoid pulling bike backwards!
+      if (!_alive || gen != _startGeneration) return;
+      if (_socket.isConnected) return;
+      final last = _lastSocketTime;
+      if (last != null && DateTime.now().difference(last).inSeconds < 15) {
         return;
       }
       try {
         final position = await _bookings.trackWorkerPosition(bookingId);
-        if (position != null) _onPosition(position);
+        if (!_alive || gen != _startGeneration) return;
+        if (position != null) {
+          _onPosition(position, source: _PosSource.poll);
+        }
       } catch (_) {}
     });
   }
 
   DateTime? _lastSocketTime;
   int _lastPositionTimestamp = 0;
+  MapCoordinate? _routeFrom;
+  bool _routeLoading = false;
+  static const _rerouteAfterMeters = 120.0;
 
-  Future<void> _loadRoute(MapCoordinate from, MapCoordinate to) async {
+  Future<void> _loadRoute(
+    MapCoordinate from,
+    MapCoordinate to,
+    int gen, {
+    bool force = false,
+  }) async {
+    if (_routeLoading && !force) return;
+    if (!force &&
+        _routeFrom != null &&
+        TrackingHelpers.distanceMeters(_routeFrom!, from) < _rerouteAfterMeters &&
+        state.routeCoordinates.length >= 2) {
+      return;
+    }
+    _routeLoading = true;
     try {
       final route = await _bookings.fetchDrivingRoute(from: from, to: to);
-      if (!isClosed && route.length >= 2) {
-        emit(state.copyWith(routeCoordinates: route));
+      if (!_alive || gen != _startGeneration) return;
+      if (route.length >= 2) {
+        _routeFrom = from;
+        _safeEmit(state.copyWith(routeCoordinates: route));
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('TrackingCubit._loadRoute: $e');
+    } finally {
+      _routeLoading = false;
+    }
   }
 
-  void _onPosition(MapCoordinate position) {
-    // Timestamp order check: ignore older delayed coordinates
+  void _onPosition(MapCoordinate position, {required _PosSource source}) {
+    if (!_alive) return;
+
     if (position.timestamp != null && position.timestamp! > 0) {
       if (position.timestamp! < _lastPositionTimestamp) {
-        return; // Stale packet, ignore!
+        return;
       }
       _lastPositionTimestamp = position.timestamp!;
     }
 
-    final target = state.customerPosition;
-    final previous = state.workerPosition ?? position;
+    final dest = state.customerPosition;
+    final displayed = state.workerPosition ?? _acceptedTarget;
+    final reference = _acceptedTarget ?? displayed;
 
-    final distFromPrev = TrackingHelpers.distanceMeters(previous, position);
-
-    // Calculate heading: if jitter movement < 2.5m, preserve previous heading to prevent bike flipping 180°
-    double heading;
-    if (position.heading != null && position.heading! > 0) {
-      heading = TrackingHelpers.normalizeHeading(position.heading!);
-    } else if (distFromPrev < 2.5 && previous.heading != null && previous.heading! > 0) {
-      heading = previous.heading!;
-    } else {
-      heading = TrackingHelpers.bearingDegrees(previous, position);
+    // Poll has no timestamp — never yank bike behind live accepted GPS.
+    if (source == _PosSource.poll && reference != null && dest != null) {
+      final pollDist = TrackingHelpers.distanceMeters(position, dest);
+      final acceptedDist = TrackingHelpers.distanceMeters(reference, dest);
+      if (pollDist > acceptedDist + 20) return;
     }
 
+    if (reference != null && dest != null) {
+      final jump = TrackingHelpers.distanceMeters(reference, position);
+      final refToDest = TrackingHelpers.distanceMeters(reference, dest);
+      final newToDest = TrackingHelpers.distanceMeters(position, dest);
+      final regressMeters = newToDest - refToDest;
+
+      // Noise / stale sample moving away from customer — drop it.
+      // Allow big corrections (tunnel GPS snap, etc.).
+      if (regressMeters > 18 && jump < 90) {
+        return;
+      }
+    }
+
+    final heading = TrackingHelpers.resolveBikeHeading(
+      position: position,
+      previous: displayed,
+      route: state.routeCoordinates,
+      reportedHeading: position.heading,
+    );
     final targetPos = position.copyWith(heading: heading);
 
-    if (target == null) {
-      emit(
+    // Same pattern as worker nav: finish current ease, then apply newest point.
+    if (_animating) {
+      final queued = _queuedTarget;
+      if (queued != null && dest != null) {
+        final qDist = TrackingHelpers.distanceMeters(queued, dest);
+        final nDist = TrackingHelpers.distanceMeters(targetPos, dest);
+        // Keep the better (closer-to-customer) pending target.
+        if (nDist <= qDist + 5) {
+          _queuedTarget = targetPos;
+        }
+      } else {
+        _queuedTarget = targetPos;
+      }
+      return;
+    }
+
+    _animateTo(targetPos);
+  }
+
+  void _animateTo(MapCoordinate targetPos) {
+    if (!_alive) return;
+
+    final dest = state.customerPosition;
+    final previous = state.workerPosition ?? targetPos;
+    _acceptedTarget = targetPos;
+    _queuedTarget = null;
+
+    final heading = TrackingHelpers.resolveBikeHeading(
+      position: targetPos,
+      previous: previous,
+      route: state.routeCoordinates,
+      reportedHeading: targetPos.heading,
+    );
+    final aimed = targetPos.copyWith(heading: heading);
+
+    if (dest == null) {
+      _safeEmit(
         state.copyWith(
-          workerPosition: targetPos,
+          workerPosition: aimed,
           workerHeading: heading,
         ),
       );
       return;
     }
 
-    final totalDist = TrackingHelpers.distanceMeters(targetPos, target);
+    final totalDist = TrackingHelpers.distanceMeters(aimed, dest);
     final eta = TrackingHelpers.estimateEtaMinutes(totalDist);
     final phase = totalDist <= 150
         ? TrackingPhase.arrived
@@ -196,44 +299,95 @@ class TrackingCubit extends Cubit<TrackingState> {
             ? TrackingPhase.nearby
             : TrackingPhase.enRoute;
 
-    // Smooth interpolation over 480ms (6 steps x 80ms)
-    _animationTimer?.cancel();
-    var tick = 0;
-    const totalTicks = 6;
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
-      tick++;
-      final progress = (tick / totalTicks).clamp(0.0, 1.0);
-      final current = TrackingHelpers.lerpCoordinate(previous, targetPos, progress);
+    final jumpMeters = TrackingHelpers.distanceMeters(previous, aimed);
+    if (jumpMeters < 1.5) {
+      _safeEmit(
+        state.copyWith(
+          workerPosition: aimed,
+          workerHeading: heading,
+          distanceMeters: totalDist,
+          etaMinutes: eta,
+          phase: phase,
+          isActive: phase != TrackingPhase.arrived,
+        ),
+      );
+      unawaited(_loadRoute(aimed, dest, _startGeneration));
+      _drainQueue();
+      return;
+    }
 
-      if (!isClosed) {
-        emit(
-          state.copyWith(
-            workerPosition: current,
-            workerHeading: heading,
-            distanceMeters: totalDist,
-            etaMinutes: eta,
-            phase: phase,
-            isActive: phase != TrackingPhase.arrived,
-          ),
-        );
+    _animationTimer?.cancel();
+    _animating = true;
+    final duration = TrackingHelpers.smoothMoveDuration(jumpMeters);
+    const tickMs = 50;
+    final totalTicks = math.max(1, (duration.inMilliseconds / tickMs).round());
+    var tick = 0;
+    _animationTimer = Timer.periodic(const Duration(milliseconds: tickMs), (
+      timer,
+    ) {
+      if (!_alive) {
+        timer.cancel();
+        _animating = false;
+        return;
       }
-      if (progress >= 1.0) timer.cancel();
+      tick++;
+      final linear = (tick / totalTicks).clamp(0.0, 1.0);
+      final progress = TrackingHelpers.easeInOut(linear);
+      final current =
+          TrackingHelpers.lerpCoordinate(previous, aimed, progress);
+      final frameHeading = TrackingHelpers.resolveBikeHeading(
+        position: current,
+        previous: previous,
+        route: state.routeCoordinates,
+        reportedHeading: heading,
+      );
+
+      _safeEmit(
+        state.copyWith(
+          workerPosition: current.copyWith(heading: frameHeading),
+          workerHeading: frameHeading,
+          distanceMeters: totalDist,
+          etaMinutes: eta,
+          phase: phase,
+          isActive: phase != TrackingPhase.arrived,
+        ),
+      );
+      if (linear >= 1.0) {
+        timer.cancel();
+        _animating = false;
+        _drainQueue();
+      }
     });
+
+    unawaited(_loadRoute(aimed, dest, _startGeneration));
+  }
+
+  void _drainQueue() {
+    final next = _queuedTarget;
+    if (next == null || !_alive) return;
+    _queuedTarget = null;
+    _animateTo(next);
   }
 
   void reset() {
+    _startGeneration++;
     _pollTimer?.cancel();
     _animationTimer?.cancel();
+    _animating = false;
+    _acceptedTarget = null;
+    _queuedTarget = null;
     _socketSubscription?.cancel();
     _connectionSubscription?.cancel();
     _socket.disconnect();
-    emit(const TrackingState());
+    _safeEmit(const TrackingState());
   }
 
   @override
   Future<void> close() {
+    _startGeneration++;
     _pollTimer?.cancel();
     _animationTimer?.cancel();
+    _animating = false;
     _socketSubscription?.cancel();
     _connectionSubscription?.cancel();
     _socket.dispose();
@@ -241,3 +395,4 @@ class TrackingCubit extends Cubit<TrackingState> {
   }
 }
 
+enum _PosSource { socket, poll }

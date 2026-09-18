@@ -8,8 +8,10 @@ const settingsSchema = new mongoose.Schema({
     platformCommissionPercent: { type: Number, default: 0 }, // Backward compatibility alias
     
     // Dynamic Operation Parameters (No hardcoded process.env fallbacks)
-    workerSearchRadiusKm: { type: Number, default: 10 },
+    workerSearchRadiusKm: { type: Number, default: 15 },
+    serviceRadiusKm: { type: Number, default: 15 },
     defaultLaborRatePerHour: { type: Number, default: 50 },
+    defaultLaborRatePerBooking: { type: Number, default: 50 },
     emergencySurchargePercent: { type: Number, default: 20 },
     emergencySurchargeFixed: { type: Number, default: 50 },
 

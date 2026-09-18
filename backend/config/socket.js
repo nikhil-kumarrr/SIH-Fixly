@@ -4,6 +4,8 @@ import redis from './redis.js';
 import { registerSocketHandlers } from '../sockets/tracking.js';
 import { registerWebRTCSocketHandlers } from '../sockets/webrtcCallSocket.js';
 
+let ioInstance = null;
+
 /**
  * Initializes the Socket.io server and configures Redis Pub/Sub adapters
  * @param {object} httpServer - The native node HTTP server instance
@@ -13,6 +15,8 @@ export const initSocket = (httpServer) => {
     const io = new Server(httpServer, {
         cors: { origin: '*' }
     });
+
+    ioInstance = io;
 
     // Redis Pub/Sub instances for horizontal scaling
     const pubClient = redis.duplicate();
@@ -31,3 +35,9 @@ export const initSocket = (httpServer) => {
 
     return io;
 };
+
+/**
+ * Returns the active Socket.io server instance
+ * @returns {object|null}
+ */
+export const getIO = () => ioInstance;

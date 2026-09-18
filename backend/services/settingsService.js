@@ -40,8 +40,13 @@ export const getPlatformSettings = async () => {
     return settings;
 };
 
-export const clearSettingsCache = async () => {
+export const clearSettingsCache = async (newSettings = null) => {
     try {
-        await redis.del(SETTINGS_CACHE_KEY);
+        if (newSettings) {
+            const val = newSettings.toObject ? newSettings.toObject() : newSettings;
+            await redis.set(SETTINGS_CACHE_KEY, JSON.stringify(val), 'EX', 3600);
+        } else {
+            await redis.del(SETTINGS_CACHE_KEY);
+        }
     } catch (_) {}
 };

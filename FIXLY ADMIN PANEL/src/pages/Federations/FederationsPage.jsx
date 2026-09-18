@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
-import { Building2, Search, Eye, CheckCircle, XCircle, Plus, RefreshCw, EyeOff, Copy, LogIn } from 'lucide-react';
+import { Building2, Search, Eye, CheckCircle, XCircle, Plus, RefreshCw, EyeOff, Copy, LogIn, RotateCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import StateDistrictSelect from '../../components/common/StateDistrictSelect';
 
 const emptyForm = () => ({
   name: '',
@@ -48,6 +49,8 @@ export default function FederationsPage() {
   const [federations, setFederations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterState, setFilterState] = useState('');
+  const [filterDistrict, setFilterDistrict] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
@@ -164,11 +167,19 @@ export default function FederationsPage() {
     );
   }
 
-  const filtered = federations.filter((f) =>
-    (f.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (f.email || '').toLowerCase().includes(search.toLowerCase()) ||
-    (f.registrationNumber || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = federations.filter((f) => {
+    const s = search.toLowerCase().trim();
+    const matchesSearch =
+      !s ||
+      (f.name || '').toLowerCase().includes(s) ||
+      (f.email || '').toLowerCase().includes(s) ||
+      (f.registrationNumber || '').toLowerCase().includes(s) ||
+      (f.state || '').toLowerCase().includes(s) ||
+      (f.district || '').toLowerCase().includes(s);
+    const matchesState = !filterState || (f.state || '').toLowerCase() === filterState.toLowerCase();
+    const matchesDistrict = !filterDistrict || (f.district || '').toLowerCase() === filterDistrict.toLowerCase();
+    return matchesSearch && matchesState && matchesDistrict;
+  });
 
   return (
     <div style={{ padding: '0 32px 32px', animation: 'fadeIn 0.2s ease' }}>
@@ -205,8 +216,8 @@ export default function FederationsPage() {
       </div>
 
       <div style={{ background: '#fff', borderRadius: 16, padding: '20px', border: '1px solid var(--border-light)' }}>
-        <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-          <div style={{ position: 'relative', flex: 1, maxWidth: 300 }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200, maxWidth: 300 }}>
             <Search size={18} color="#94a3b8" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
             <input
               type="text"
@@ -223,6 +234,47 @@ export default function FederationsPage() {
               }}
             />
           </div>
+
+          <div style={{ flex: '2 1 340px', minWidth: 280 }}>
+            <StateDistrictSelect
+              isFilter={true}
+              showLabels={false}
+              selectedState={filterState}
+              selectedDistrict={filterDistrict}
+              onStateChange={(st) => {
+                setFilterState(st);
+                setFilterDistrict('');
+              }}
+              onDistrictChange={(dist) => setFilterDistrict(dist)}
+              fieldStyle={{ padding: '9.5px 12px', borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 13.5 }}
+            />
+          </div>
+
+          {(search || filterState || filterDistrict) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setFilterState('');
+                setFilterDistrict('');
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '9.5px 14px',
+                borderRadius: 10,
+                border: '1px solid #cbd5e1',
+                background: '#f8fafc',
+                color: '#64748b',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <RotateCcw size={14} /> Reset
+            </button>
+          )}
         </div>
 
         <div style={{ overflowX: 'auto' }}>
@@ -440,16 +492,16 @@ export default function FederationsPage() {
                 <label htmlFor="fed-phone" style={labelStyle}>Contact Phone</label>
                 <input id="fed-phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 98765 43210" style={fieldStyle} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label htmlFor="fed-state" style={labelStyle}>State *</label>
-                  <input id="fed-state" required value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} placeholder="Delhi" style={fieldStyle} />
-                </div>
-                <div>
-                  <label htmlFor="fed-district" style={labelStyle}>District *</label>
-                  <input id="fed-district" required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} placeholder="South Delhi" style={fieldStyle} />
-                </div>
-              </div>
+              <StateDistrictSelect
+                selectedState={form.state}
+                selectedDistrict={form.district}
+                onStateChange={(st) => setForm({ ...form, state: st, district: '' })}
+                onDistrictChange={(dist) => setForm({ ...form, district: dist })}
+                stateId="fed-state"
+                districtId="fed-district"
+                fieldStyle={{ ...fieldStyle, backgroundColor: '#ffffff', cursor: 'pointer' }}
+                labelStyle={labelStyle}
+              />
               <div>
                 <label htmlFor="fed-reg" style={labelStyle}>Registration Number (optional)</label>
                 <input id="fed-reg" value={form.registrationNumber} onChange={(e) => setForm({ ...form, registrationNumber: e.target.value })} placeholder="Legal reg. id — not used for login" style={fieldStyle} />

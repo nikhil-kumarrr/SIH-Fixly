@@ -19,6 +19,18 @@ class ProfileCubit extends Cubit<ProfileState> {
   final MockRepository _repo;
   final AuthApiRepository _auth;
 
+  String _resolvedHomeState(AppUser? user) {
+    final fromUser = user?.homeState?.trim();
+    if (fromUser != null && fromUser.isNotEmpty) return fromUser;
+    return _repo.onboardingData.state;
+  }
+
+  String _resolvedHomeCity(AppUser? user) {
+    final fromUser = user?.homeCity?.trim();
+    if (fromUser != null && fromUser.isNotEmpty) return fromUser;
+    return _repo.onboardingData.district;
+  }
+
   Future<bool> refreshCurrentLocation() async {
     final refreshed = await LocationService.instance.refreshCurrentPosition();
     if (!refreshed || !AppLocation.instance.hasFix) return false;
@@ -60,7 +72,8 @@ class ProfileCubit extends Cubit<ProfileState> {
           emergencyContactName: user.emergencyName ?? '',
           emergencyContactPhone: user.emergencyPhone ?? '',
           emergencyContactRelation: user.emergencyRelation ?? '',
-          homeCity: user.homeCity ?? '',
+          homeState: _resolvedHomeState(user),
+          homeCity: _resolvedHomeCity(user),
           homePincode: user.homePincode ?? '',
         ),
       );
@@ -89,7 +102,8 @@ class ProfileCubit extends Cubit<ProfileState> {
           emergencyContactName: user?.emergencyName ?? '',
           emergencyContactPhone: user?.emergencyPhone ?? '',
           emergencyContactRelation: user?.emergencyRelation ?? '',
-          homeCity: user?.homeCity ?? '',
+          homeState: _resolvedHomeState(user),
+          homeCity: _resolvedHomeCity(user),
           homePincode: user?.homePincode ?? '',
           errorMessage: e.message,
         ),
@@ -119,7 +133,8 @@ class ProfileCubit extends Cubit<ProfileState> {
           emergencyContactName: user?.emergencyName ?? '',
           emergencyContactPhone: user?.emergencyPhone ?? '',
           emergencyContactRelation: user?.emergencyRelation ?? '',
-          homeCity: user?.homeCity ?? '',
+          homeState: _resolvedHomeState(user),
+          homeCity: _resolvedHomeCity(user),
           homePincode: user?.homePincode ?? '',
         ),
       );
@@ -143,6 +158,7 @@ class ProfileCubit extends Cubit<ProfileState> {
     String? workAddress,
     String? gender,
     String? upiId,
+    String? homeState,
     String? homeCity,
     String? homePincode,
   }) async {
@@ -165,6 +181,7 @@ class ProfileCubit extends Cubit<ProfileState> {
         workAddress: workAddress,
         gender: gender,
         upiId: upiId,
+        homeState: homeState,
         homeCity: homeCity,
         homePincode: homePincode,
         isWorker: state.isWorker,
@@ -189,7 +206,8 @@ class ProfileCubit extends Cubit<ProfileState> {
           emergencyContactName: user.emergencyName ?? '',
           emergencyContactPhone: user.emergencyPhone ?? '',
           emergencyContactRelation: user.emergencyRelation ?? '',
-          homeCity: user.homeCity ?? '',
+          homeState: _resolvedHomeState(user),
+          homeCity: _resolvedHomeCity(user),
           homePincode: user.homePincode ?? '',
         ),
       );

@@ -11,6 +11,9 @@ class SearchState extends Equatable {
     this.hasMoreWorkers = false,
     this.nextWorkerOffset = 0,
     this.isLoadingMoreWorkers = false,
+    this.workersEmptyCode,
+    this.workersEmptyMessage,
+    this.searchRadiusKm,
   });
 
   final String query;
@@ -22,6 +25,9 @@ class SearchState extends Equatable {
   final bool hasMoreWorkers;
   final int nextWorkerOffset;
   final bool isLoadingMoreWorkers;
+  final String? workersEmptyCode;
+  final String? workersEmptyMessage;
+  final int? searchRadiusKm;
 
   SearchState copyWith({
     String? query,
@@ -33,6 +39,10 @@ class SearchState extends Equatable {
     bool? hasMoreWorkers,
     int? nextWorkerOffset,
     bool? isLoadingMoreWorkers,
+    String? workersEmptyCode,
+    String? workersEmptyMessage,
+    int? searchRadiusKm,
+    bool clearWorkersEmpty = false,
   }) {
     return SearchState(
       query: query ?? this.query,
@@ -44,6 +54,15 @@ class SearchState extends Equatable {
       hasMoreWorkers: hasMoreWorkers ?? this.hasMoreWorkers,
       nextWorkerOffset: nextWorkerOffset ?? this.nextWorkerOffset,
       isLoadingMoreWorkers: isLoadingMoreWorkers ?? this.isLoadingMoreWorkers,
+      workersEmptyCode: clearWorkersEmpty
+          ? workersEmptyCode
+          : (workersEmptyCode ?? this.workersEmptyCode),
+      workersEmptyMessage: clearWorkersEmpty
+          ? workersEmptyMessage
+          : (workersEmptyMessage ?? this.workersEmptyMessage),
+      searchRadiusKm: clearWorkersEmpty
+          ? searchRadiusKm
+          : (searchRadiusKm ?? this.searchRadiusKm),
     );
   }
 
@@ -58,5 +77,8 @@ class SearchState extends Equatable {
     hasMoreWorkers,
     nextWorkerOffset,
     isLoadingMoreWorkers,
+    workersEmptyCode,
+    workersEmptyMessage,
+    searchRadiusKm,
   ];
 }

@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../workers/data/workers_api_repository.dart';
 
 class CustomerAiWorkersPage extends StatefulWidget {
@@ -124,7 +125,9 @@ class _AiWorkerTile extends StatelessWidget {
                   Text(
                     worker.skills.isEmpty
                         ? 'Skilled worker'
-                        : worker.skills.join(' • '),
+                        : localizeCategoryList(
+                            worker.skills, context.l10n.locale)
+                          .join(' • '),
                   ),
                   Row(
                     children: [

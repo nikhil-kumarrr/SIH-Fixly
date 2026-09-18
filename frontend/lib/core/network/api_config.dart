@@ -6,13 +6,15 @@ class ApiConfig {
 
   // ─── ✏️  CHANGE THIS to your backend URL ───────────────────────────────────
   //
-  //  Android emulator (AVD):         http://10.0.2.2:8005
-  //  iOS Simulator:                  http://localhost:8005
-  //  Physical device (your WiFi):    http://192.168.1.88:8005  ← your LAN IP
+  //  Android emulator (AVD):         http://10.0.2.2:8000
+  //  iOS Simulator:                  http://localhost:8000
+  //  Physical device (your WiFi):    http://192.168.29.34:8000  ← current LAN
   //  Tunnel / production:            https://your-tunnel-url.com
   //
-  static const String baseUrl =
-      'http://fexily-lb-380632449.ap-south-1.elb.amazonaws.com';
+  // Local backend (this Mac :8000) — Android emulator connects via 10.0.2.2:8000
+  // static const String baseUrl = 'http://10.0.2.2:8000';
+  static const String baseUrl = 'http://fexily-lb-380632449.ap-south-1.elb.amazonaws.com';
+
   // ───────────────────────────────────────────────────────────────────────────
 
   /// Notifier in case any widget needs to react to URL changes at runtime.

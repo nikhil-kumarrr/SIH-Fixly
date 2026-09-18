@@ -247,3 +247,43 @@ test('getTargetCallRooms and getTargetBookingRooms resolve dual hash/non-hash ro
     assert.ok(trackRooms2.includes(`booking_${testIdWithoutHash}`));
 });
 
+test('hangupWebRTCCall terminates call cleanly and validates bookingId', async () => {
+    const { hangupWebRTCCall } = await import('../controllers/webrtcCallController.js');
+
+    let capturedStatus = null;
+    let capturedJson = null;
+    const res = {
+        status(code) {
+            capturedStatus = code;
+            return this;
+        },
+        json(data) {
+            capturedJson = data;
+            return this;
+        }
+    };
+
+    // 1. Missing bookingId returns 400
+    await hangupWebRTCCall({
+        body: {},
+        user: { id: new mongoose.Types.ObjectId() },
+        app: { get: () => null }
+    }, res);
+
+    assert.equal(capturedStatus, 400);
+    assert.equal(capturedJson.success, false);
+
+    // 2. Valid bookingId executes cleanly without throwing
+    capturedStatus = null;
+    capturedJson = null;
+    await hangupWebRTCCall({
+        body: { bookingId: '#BK-260906-0001A8F2', endReason: 'NORMAL_HANGUP', durationSeconds: 45 },
+        user: { id: new mongoose.Types.ObjectId() },
+        app: { get: () => null }
+    }, res);
+
+    assert.equal(capturedStatus, 200);
+    assert.equal(capturedJson.success, true);
+});
+
+

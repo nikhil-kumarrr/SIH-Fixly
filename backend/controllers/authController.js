@@ -141,6 +141,8 @@ export const registerUser = async (req, res) => {
             (workerProfile.categoryRates && workerProfile.categoryRates.length > 0)
         );
 
+        // Keep workerProfile null until onboarding (setup-profile). A stub object
+        // makes the app think KYC was submitted and skip to verification status.
         const userPayload = {
             name,
             email: emailNormalized,
@@ -149,13 +151,15 @@ export const registerUser = async (req, res) => {
             authProvider: 'local',
             phone: phone || null,
             location: location || null,
-            workerProfile: registeredRole === 'worker' ? {
-                ...(hasFullWorkerProfile ? workerProfile : {}),
-                rating: 0.0,
-                totalJobs: 0,
-                walletBalance: 0,
-                totalEarnings: 0
-            } : null,
+            workerProfile: registeredRole === 'worker' && hasFullWorkerProfile
+                ? {
+                    ...workerProfile,
+                    rating: workerProfile.rating ?? 0.0,
+                    totalJobs: workerProfile.totalJobs ?? 0,
+                    walletBalance: workerProfile.walletBalance ?? 0,
+                    totalEarnings: workerProfile.totalEarnings ?? 0,
+                }
+                : null,
             ...(validFederationId && { federation: validFederationId })
         };
 
@@ -711,8 +715,19 @@ export const updateUserProfile = async (req, res) => {
 
             isOnline: currentProfile.isOnline !== undefined ? currentProfile.isOnline : false,
             lastActiveAt: currentProfile.lastActiveAt || null,
-            serviceRadiusKm: currentProfile.serviceRadiusKm || 10,
-            availabilitySchedule: currentProfile.availabilitySchedule || { days: [], startTime: '09:00', endTime: '18:00' },
+            serviceRadiusKm: body.serviceRadiusKm != null
+                ? Number(body.serviceRadiusKm)
+                : (currentProfile.serviceRadiusKm || 10),
+            availabilitySchedule: (body.availabilitySchedule && typeof body.availabilitySchedule === 'object')
+                ? {
+                    days: Array.isArray(body.availabilitySchedule.days) ? body.availabilitySchedule.days : [],
+                    startTime: body.availabilitySchedule.startTime || '09:00',
+                    endTime: body.availabilitySchedule.endTime || '18:00',
+                }
+                : (currentProfile.availabilitySchedule || { days: [], startTime: '09:00', endTime: '18:00' }),
+            recentWorkPhotos: Array.isArray(body.recentWorkPhotos)
+                ? body.recentWorkPhotos
+                : (currentProfile.recentWorkPhotos || []),
             walletBalance: currentProfile.walletBalance || 0,
             totalEarnings: currentProfile.totalEarnings || 0,
             walletTransactions: currentProfile.walletTransactions || []

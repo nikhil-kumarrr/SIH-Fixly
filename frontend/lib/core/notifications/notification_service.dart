@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:ui' show Color;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -15,6 +15,7 @@ import '../preferences/app_preferences.dart';
 import '../utils/app_package_info.dart';
 import '../../services/webrtc_call_service.dart';
 import '../../app/router/app_router.dart';
+import '../../app/router/route_names.dart';
 import 'notification_channels.dart';
 import 'notification_payload.dart';
 import 'notification_permission_service.dart';
@@ -22,26 +23,47 @@ import 'notification_router.dart';
 import 'notification_token_service.dart';
 import 'notification_topic_service.dart';
 
+// Guards against a duplicate CallKit UI when two pushes land for the same
+// booking in quick succession (e.g. REST + socket race). Scoped per isolate.
+final Map<String, int> _recentIncomingCallShows = <String, int>{};
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 
   final data = message.data;
   if (data['type'] == 'INCOMING_CALL') {
+    final dedupeKey =
+        (data['bookingId'] ?? data['callSessionId'] ?? '').toString();
+    if (dedupeKey.isNotEmpty) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final last = _recentIncomingCallShows[dedupeKey];
+      if (last != null && now - last < 15000) {
+        return; // already ringing for this booking
+      }
+      _recentIncomingCallShows[dedupeKey] = now;
+    }
+    final callerRole = (data['callerRole'] ?? 'worker').toString().toLowerCase();
+    final isCustomerCaller = callerRole.contains('customer');
+    final callerName = data['callerName']?.toString() ??
+        (isCustomerCaller ? 'Customer' : 'Worker');
+    final handle = isCustomerCaller
+        ? 'Customer is calling'
+        : 'Worker is calling';
     final params = CallKitParams(
       id: data['callSessionId'] ?? 'call_${DateTime.now().millisecondsSinceEpoch}',
-      nameCaller: data['callerName'] ?? 'Fixly User',
+      nameCaller: callerName,
       appName: 'Fixly',
       avatar: data['callerAvatar'],
-      handle: data['serviceTitle'] ?? 'Audio Calling',
+      handle: handle,
       type: 0, // 0 = Audio Call
       duration: 30000,
       extra: <String, dynamic>{
         'bookingId': data['bookingId'],
         'callerId': data['callerId'],
-        'callerRole': data['callerRole'],
+        'callerRole': isCustomerCaller ? 'customer' : 'worker',
         'serviceTitle': data['serviceTitle'],
-        'callerName': data['callerName'],
+        'callerName': callerName,
         'callerAvatar': data['callerAvatar'],
       },
       android: const AndroidParams(
@@ -50,6 +72,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         ringtonePath: 'system_ringtone_default',
         backgroundColor: '#0F172A',
         actionColor: '#10B981',
+        textAccept: 'Accept',
+        textDecline: 'Decline',
       ),
       ios: const IOSParams(
         iconName: 'AppIcon',
@@ -63,6 +87,15 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     );
 
     await FlutterCallkitIncoming.showCallkitIncoming(params);
+    // So decline/timeout can emit webrtc:call-reject with bookingId.
+    WebRTCCallService.instance.noteIncomingRing(
+      bookingId: (data['bookingId'] ?? '').toString(),
+      callSessionId: data['callSessionId']?.toString(),
+      callerName: callerName,
+      callerRole: isCustomerCaller ? 'customer' : 'worker',
+      callerAvatar: data['callerAvatar']?.toString(),
+      serviceTitleParam: data['serviceTitle']?.toString(),
+    );
   } else if (data['type'] == 'CANCEL_CALL') {
     final callSessionId = data['callSessionId'];
     if (callSessionId != null) {
@@ -88,6 +121,14 @@ class NotificationService {
   String? _currentToken;
   String? _role;
   VoidCallback? onInboxInvalidated;
+  DateTime? _ignoreCallkitEndUntil;
+
+  static String? _normalizePeerRole(String? raw) {
+    final r = (raw ?? '').trim().toLowerCase();
+    if (r.contains('customer')) return 'customer';
+    if (r.contains('worker')) return 'worker';
+    return r.isEmpty ? null : r;
+  }
 
   Future<void> initialize() async {
     if (_initialized || !FirebaseBootstrap.isFirebaseReady) return;
@@ -126,25 +167,83 @@ class NotificationService {
     FlutterCallkitIncoming.onEvent.listen((event) async {
       if (event == null) return;
       if (event is CallEventActionCallAccept) {
-        final extra = event.callKitParams.extra;
+        final params = event.callKitParams;
+        final extra = params.extra;
         final bookingId = extra?['bookingId']?.toString();
-        if (bookingId != null) {
-          await WebRTCCallService.instance.acceptCall(
+        if (bookingId == null || bookingId.isEmpty) return;
+
+        // CallKit often emits a spurious CallEnded right after Accept — ignore
+        // longer so accept media setup isn't torn down (worker crash/restart).
+        _ignoreCallkitEndUntil =
+            DateTime.now().add(const Duration(seconds: 5));
+
+        final callerId = extra?['callerId']?.toString();
+        final callerName = extra?['callerName']?.toString();
+        final callerRole = _normalizePeerRole(extra?['callerRole']?.toString());
+        final callerAvatar = extra?['callerAvatar']?.toString();
+        final serviceTitle = extra?['serviceTitle']?.toString();
+        final callSessionId = params.id;
+
+        try {
+          final ok = await WebRTCCallService.instance.acceptCall(
             bookingId: bookingId,
-            callerName: extra?['callerName']?.toString(),
-            callerRole: extra?['callerRole']?.toString(),
-            callerAvatar: extra?['callerAvatar']?.toString(),
-            serviceTitleParam: extra?['serviceTitle']?.toString(),
+            callerId: callerId,
+            callerName: callerName,
+            callerRole: callerRole,
+            callerAvatar: callerAvatar,
+            serviceTitleParam: serviceTitle,
+            callSessionId: callSessionId,
           );
-          final context = rootNavigatorKey.currentContext;
-          if (context != null && context.mounted) {
-            context.push('/call');
+          if (!ok) {
+            await FlutterCallkitIncoming.endAllCalls();
+            return;
           }
+          if (callSessionId.isNotEmpty) {
+            try {
+              await FlutterCallkitIncoming.endCall(callSessionId);
+            } catch (_) {}
+          }
+          await _routeToCallScreen(<String, dynamic>{
+            'bookingId': bookingId,
+            'peerName': callerName ??
+                WebRTCCallService.instance.peerName ??
+                'Fixly User',
+            'peerRole': callerRole ??
+                WebRTCCallService.instance.peerRole ??
+                'worker',
+            'peerAvatar':
+                callerAvatar ?? WebRTCCallService.instance.peerAvatar,
+            'serviceTitle': serviceTitle ??
+                WebRTCCallService.instance.serviceTitle ??
+                'Fixly Service',
+            'isIncoming': true,
+          });
+        } catch (e, st) {
+          debugPrint('CallKit accept failed: $e\n$st');
+          await FlutterCallkitIncoming.endAllCalls();
         }
       } else if (event is CallEventActionCallDecline) {
-        WebRTCCallService.instance.rejectCall(reason: 'DECLINED');
+        final params = event.callKitParams;
+        final extra = params.extra;
+        final bookingId = extra?['bookingId']?.toString();
+        final callSessionId = params.id;
+        debugPrint(
+          'CallKit decline bookingId=$bookingId session=$callSessionId',
+        );
+        WebRTCCallService.instance.rejectCall(
+          reason: 'DECLINED',
+          bookingId: bookingId,
+          callSessionId: callSessionId,
+        );
       } else if (event is CallEventActionCallEnded) {
-        WebRTCCallService.instance.hangUp();
+        debugPrint('[CallKit] CallEventActionCallEnded received (ignored - call handled in Flutter UI)');
+      } else if (event is CallEventActionCallTimeout) {
+        if (WebRTCCallService.instance.isInCall) return;
+        WebRTCCallService.instance.rejectCall(
+          reason: 'TIMEOUT',
+          bookingId: WebRTCCallService.instance.currentBookingId,
+          callSessionId: event.id,
+        );
       }
     });
 
@@ -152,6 +251,32 @@ class NotificationService {
 
     // Proactively sync device FCM token to backend on app cold-start
     unawaited(_syncToken(locale: AppPreferences.instance.locale));
+  }
+
+  // Pushes the single CallScreen. On a cold start (app was killed and launched
+  // by the CallKit Accept) the root navigator context isn't ready immediately,
+  // so retry briefly until it mounts instead of dropping the navigation.
+  Future<void> _routeToCallScreen(Map<String, dynamic> extra) async {
+    for (var attempt = 0; attempt < 24; attempt++) {
+      final context = rootNavigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        try {
+          final uri = GoRouter.of(context)
+              .routerDelegate
+              .currentConfiguration
+              .uri
+              .toString();
+          if (uri.contains('/call')) {
+            debugPrint('CallScreen is already active, skipping duplicate push');
+            return;
+          }
+        } catch (_) {}
+        context.push(RouteNames.call, extra: extra);
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    debugPrint('CallKit accept: navigator never became ready, skipped route');
   }
 
   Future<void> requestPermissionsAndSync() async {
@@ -310,6 +435,8 @@ class NotificationService {
       } else {
         await FlutterCallkitIncoming.endAllCalls();
       }
+      // Caller still on CallScreen after peer decline — clear ringing UI.
+      WebRTCCallService.instance.endFromRemoteCancel();
       return;
     }
 

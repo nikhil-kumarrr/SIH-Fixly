@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Image as ImageIcon,
   ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useApp } from '../../context/AppContext';
@@ -86,6 +87,13 @@ export default function ApprovalsPage() {
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineText, setDeclineText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 900);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const templates = [
       'Your request to join as a worker has been declined.',
@@ -119,12 +127,20 @@ export default function ApprovalsPage() {
     setDeclineOpen(false);
   }, [loadList]);
 
-  const openDetail = async (id) => {
+  const openDetail = async (id, fallbackWorker = null) => {
+    if (fallbackWorker) {
+      setSelected(fallbackWorker);
+    }
     setDetailLoading(true);
     setDeclineOpen(false);
     try {
       const res = await api.getWorkerById(id);
-      if (res.success) setSelected(res.data);
+      const worker = res?.worker || res?.data;
+      if (res?.success && worker) {
+        setSelected(worker);
+      } else if (!fallbackWorker && res?.data) {
+        setSelected(res.data);
+      }
     } catch (err) {
       showToast?.('error', err.response?.data?.message || 'Failed to load worker');
     } finally {
@@ -290,72 +306,90 @@ export default function ApprovalsPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected || detailLoading ? '1fr 1.1fr' : '1fr', gap: 16 }}>
-        <div
-          style={{
-            background: '#fff',
-            border: '1px solid var(--border-light)',
-            borderRadius: 16,
-            overflow: 'hidden',
-            minHeight: 320,
-          }}
-        >
-          {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Loading…</div>
-          ) : rows.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-              No workers with status “{tab === 'pending' ? 'pending review' : tab}”.
-            </div>
-          ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {rows.map((w) => {
-                const active = selected?._id === w._id;
-                return (
-                  <li key={w._id}>
-                    <button
-                      type="button"
-                      onClick={() => openDetail(w._id)}
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        display: 'flex',
-                        gap: 12,
-                        alignItems: 'center',
-                        padding: '14px 16px',
-                        border: 'none',
-                        borderBottom: '1px solid #f1f5f9',
-                        background: active ? '#f0fdf4' : '#fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Avatar name={w.name} src={w.avatar} size={40} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{w.name}</div>
-                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                          {w.phone || '—'} · {w.email || '—'}
+      <div style={{ display: 'grid', gridTemplateColumns: (!isMobile && (selected || detailLoading)) ? '1fr 1.1fr' : '1fr', gap: 16 }}>
+        {(!isMobile || (!selected && !detailLoading)) && (
+          <div
+            style={{
+              background: '#fff',
+              border: '1px solid var(--border-light)',
+              borderRadius: 16,
+              overflow: 'hidden',
+              minHeight: 320,
+            }}
+          >
+            {loading ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Loading…</div>
+            ) : rows.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
+                No workers with status “{tab === 'pending' ? 'pending review' : tab}”.
+              </div>
+            ) : (
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                {rows.map((w) => {
+                  const active = selected?._id === w._id;
+                  return (
+                    <li key={w._id}>
+                      <button
+                        type="button"
+                        onClick={() => openDetail(w._id, w)}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          display: 'flex',
+                          gap: 12,
+                          alignItems: 'center',
+                          padding: '14px 16px',
+                          border: 'none',
+                          borderBottom: '1px solid #f1f5f9',
+                          background: active ? '#f0fdf4' : '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Avatar name={w.name} src={w.avatar} size={40} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{w.name}</div>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>
+                            {w.phone || '—'} · {w.email || '—'}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                            {w.workerProfile?.category || 'General'} · KYC {w.kycDocuments?.status || '—'}
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                          {w.workerProfile?.category || 'General'} · KYC {w.kycDocuments?.status || '—'}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        {tab === 'rejected' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); alert('Re-invite sent'); }}
-                            style={{ padding: '6px 12px', fontSize: 11, background: '#f1f5f9', color: '#475569', borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: 600 }}
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          {tab === 'rejected' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); alert('Re-invite sent'); }}
+                              style={{ padding: '6px 12px', fontSize: 11, background: '#f1f5f9', color: '#475569', borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Re-invite
+                            </button>
+                          )}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '6px 12px',
+                              background: active ? '#15803d' : '#f0fdf4',
+                              color: active ? '#fff' : '#15803d',
+                              borderRadius: 8,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              border: '1px solid #bbf7d0',
+                            }}
                           >
-                            Re-invite
-                          </button>
-                        )}
-                        <Eye size={16} color="#64748b" />
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+                            <Eye size={14} />
+                            <span>Review</span>
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
 
         {(selected || detailLoading) && (
           <div
@@ -363,14 +397,38 @@ export default function ApprovalsPage() {
               background: '#fff',
               border: '1px solid var(--border-light)',
               borderRadius: 16,
-              padding: 20,
+              padding: isMobile ? 14 : 20,
               display: 'flex',
               flexDirection: 'column',
               gap: 16,
-              maxHeight: 'calc(100vh - 180px)',
+              maxHeight: isMobile ? 'none' : 'calc(100vh - 180px)',
               overflowY: 'auto',
             }}
           >
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 12px',
+                  backgroundColor: '#f1f5f9',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#334155',
+                  alignSelf: 'flex-start',
+                  border: '1px solid #cbd5e1',
+                  cursor: 'pointer',
+                  marginBottom: 4,
+                }}
+              >
+                <ArrowLeft size={15} /> Back to List
+              </button>
+            )}
+
             {detailLoading && !selected ? (
               <div style={{ color: '#64748b' }}>Loading details…</div>
             ) : selected ? (
@@ -399,7 +457,7 @@ export default function ApprovalsPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
                   <div><strong>Category:</strong> {profile.category || '—'}</div>
-                  <div><strong>Hourly:</strong> ₹{profile.hourlyRate ?? '—'}</div>
+                  <div><strong>Base Rate:</strong> ₹{profile.rate ?? profile.hourlyRate ?? '—'}</div>
                   <div><strong>Aadhaar:</strong> {kyc.aadhaarNumber || '—'}</div>
                   <div><strong>PAN:</strong> {kyc.panNumber || '—'}</div>
                   <div style={{ gridColumn: '1 / -1' }}>
@@ -441,8 +499,7 @@ export default function ApprovalsPage() {
                   </div>
                 </div>
 
-                {((['submitted', 'none', 'NOT_STARTED', 'MANUAL_REVIEW', 'PROCESSING'].includes(kyc.status) || !kyc.status) &&
-                  !selected.isVerified) &&
+                {(!selected.isVerified || kyc.status?.toLowerCase() !== 'approved') &&
                   !declineOpen && (
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
                     <button
@@ -488,6 +545,26 @@ export default function ApprovalsPage() {
                     >
                       <CheckCircle size={16} /> Approve
                     </button>
+                  </div>
+                )}
+
+                {(selected.isVerified && kyc.status?.toLowerCase() === 'approved') && !declineOpen && (
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '8px 14px',
+                        borderRadius: 8,
+                        background: '#dcfce7',
+                        color: '#15803d',
+                        fontWeight: 700,
+                        fontSize: 13,
+                      }}
+                    >
+                      <CheckCircle size={16} /> Verified Cooperative Member
+                    </div>
                   </div>
                 )}
 

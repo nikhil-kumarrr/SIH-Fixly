@@ -24,7 +24,9 @@ export const generateUniqueBookingId = () => {
 
 const addOnItemSchema = new mongoose.Schema({
     title: { type: String, required: true },
-    price: { type: Number, required: true }
+    price: { type: Number, required: true }, // line total (unitPrice * quantity)
+    unitPrice: { type: Number, default: null },
+    quantity: { type: Number, default: 1 },
 }, { _id: true });
 
 const bookingSchema = new mongoose.Schema({
@@ -55,6 +57,8 @@ const bookingSchema = new mongoose.Schema({
 
     problemDescription: { type: String, default: null },
     problemPhotos: [{ type: String }],
+    workPhotos: [{ type: String }],
+    completionPhotos: [{ type: String }],
 
     serviceAddress: {
         addressLine: { type: String, required: true },
@@ -87,6 +91,7 @@ const bookingSchema = new mongoose.Schema({
     jobCompletedAt: { type: Date, default: null },
 
     isReviewed: { type: Boolean, default: false },
+    workerReviewed: { type: Boolean, default: false },
     declineReason: { type: String, default: null },
     declinedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
@@ -98,6 +103,7 @@ const bookingSchema = new mongoose.Schema({
 
     workerEstimation: {
         estimatedTotal: { type: Number },
+        lockedBaseFee: { type: Number },
         laborCost: { type: Number },
         partsEstimate: { type: Number },
         serviceCharge: { type: Number },

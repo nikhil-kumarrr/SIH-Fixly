@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../constants/app_strings.dart';
 import '../../features/auth/presentation/cubit/app_session_cubit.dart';
+import '../navigation/customer_navigation.dart';
+import '../navigation/screen_refresh.dart';
 import '../network/customer_realtime_service.dart';
 import 'animated_bottom_nav_bar.dart';
 
@@ -29,6 +31,24 @@ class _CustomerMainShellState extends State<CustomerMainShell> {
   }
 
   void _onTap(int index) {
+    if (index < 0 ||
+        index >= CustomerNavigation.customerTabRoutes.length) {
+      return;
+    }
+    final target = CustomerNavigation.customerTabRoutes[index];
+    ScreenRefresh.mark(target);
+
+    // Category/search overlays use rootNavigatorKey — goBranch alone leaves
+    // them on top, so the UI looks stuck while the shell switches underneath.
+    final path = GoRouterState.of(context).uri.path;
+    final coveringShell = path.contains('/category-search') ||
+        path.endsWith('/categories') ||
+        path.contains('/categories/');
+    if (coveringShell) {
+      context.go(target);
+      return;
+    }
+
     widget.navigationShell.goBranch(
       index,
       initialLocation: index == widget.navigationShell.currentIndex,

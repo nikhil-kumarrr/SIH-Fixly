@@ -7,8 +7,8 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_radius.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/theme_x.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../auth/presentation/cubit/app_session_cubit.dart';
@@ -104,10 +104,12 @@ class _WorkerProfilePageState extends State<WorkerProfilePage> {
                         phone: state.phone,
                         email: state.email,
                         category: state.category,
+                        categories: state.categories,
                         hourlyRate: state.hourlyRate,
                         experienceYears: state.experienceYears,
                         insured: state.insured,
                         workAddress: state.workAddress,
+                        locationLabel: state.locationSummary,
                         refreshingLocation: _refreshingLocation,
                         onUseCurrentLocation: _useCurrentLocation,
                         onEditTap: () async {
@@ -280,28 +282,37 @@ class _WorkerHeroCard extends StatelessWidget {
     required this.experienceYears,
     required this.insured,
     required this.workAddress,
+    required this.locationLabel,
     required this.refreshingLocation,
     required this.onUseCurrentLocation,
     required this.onEditTap,
+    this.categories = const [],
   });
 
   final String name;
   final String phone;
   final String email;
   final String category;
+  final List<String> categories;
   final double hourlyRate;
   final int experienceYears;
   final bool insured;
   final String workAddress;
+  final String locationLabel;
   final bool refreshingLocation;
   final VoidCallback onUseCurrentLocation;
   final VoidCallback onEditTap;
 
-  String _categoryLabel(String id) {
-    for (final c in ServiceCategories.all) {
-      if (c.id == id) return '${c.nameEn} (${c.nameHi})';
-    }
-    return id.isNotEmpty ? id : 'Skilled Professional';
+  // Show ALL selected categories in the user's language (or none) — never a
+  // mixed English (Hindi) label.
+  String _categoryLabel(BuildContext context) {
+    final locale = context.l10n.locale;
+    final raw = categories.isNotEmpty
+        ? categories
+        : (category.isNotEmpty ? <String>[category] : const <String>[]);
+    final labels = localizeCategoryList(raw, locale);
+    if (labels.isEmpty) return 'Skilled Professional';
+    return labels.join(' • ');
   }
 
   @override
@@ -378,7 +389,7 @@ class _WorkerHeroCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _categoryLabel(category),
+                      _categoryLabel(context),
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: Colors.white.withValues(alpha: 0.95),
                         fontWeight: FontWeight.w600,
@@ -419,7 +430,11 @@ class _WorkerHeroCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  workAddress.isNotEmpty ? workAddress : 'Location not set',
+                  locationLabel.isNotEmpty
+                      ? locationLabel
+                      : (workAddress.isNotEmpty
+                          ? workAddress
+                          : 'Location not set'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -576,16 +591,10 @@ class _SkillsCard extends StatelessWidget {
 
   final List<String> skills;
 
-  String _skillName(String id) {
-    for (final c in ServiceCategories.all) {
-      if (c.id == id) return c.nameEn;
-    }
-    return id;
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final locale = context.l10n.locale;
 
     return Material(
       color: Theme.of(context).cardColor,
@@ -613,7 +622,7 @@ class _SkillsCard extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  _skillName(s),
+                  localizeCategory(s, locale),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: scheme.primary,
                     fontWeight: FontWeight.w600,

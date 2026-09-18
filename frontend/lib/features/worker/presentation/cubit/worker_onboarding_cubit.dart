@@ -205,6 +205,16 @@ class WorkerOnboardingCubit extends Cubit<WorkerOnboardingState> {
     );
   }
 
+  void updateSociety({required String id, String? memberId}) {
+    _emitForm(
+      state.formData.copyWith(societyId: id, societyMemberId: memberId),
+    );
+  }
+
+  void updateRecentWorkPhotos(List<String> paths) {
+    _emitForm(state.formData.copyWith(recentWorkPhotoPaths: paths));
+  }
+
   void toggleIncludedTask(String category, String task) {
     final currentMap = Map<String, List<String>>.from(state.formData.includedTasks);
     final list = List<String>.from(currentMap[category] ?? []);
@@ -442,7 +452,8 @@ class WorkerOnboardingCubit extends Cubit<WorkerOnboardingState> {
   Future<bool> submitOnboarding() async {
     emit(state.copyWith(status: WorkerOnboardingStatus.loading));
     try {
-      await _workersApi.submitSetupProfile(state.formData);
+      final res = await _workersApi.submitSetupProfile(state.formData);
+      await _trySubmitVerification(res);
       _repo.onboardingData = state.formData;
       _repo.kycReviewStatus = KycReviewStatus.submitted;
       emit(
@@ -469,6 +480,45 @@ class WorkerOnboardingCubit extends Cubit<WorkerOnboardingState> {
         ),
       );
       return false;
+    }
+  }
+
+  /// Best-effort AI verification path using URLs returned (or form data URIs).
+  Future<void> _trySubmitVerification(Map<String, dynamic> setupRes) async {
+    final data = state.formData;
+    final user = setupRes['user'] is Map
+        ? Map<String, dynamic>.from(setupRes['user'] as Map)
+        : <String, dynamic>{};
+    final kyc = user['kycDocuments'] is Map
+        ? Map<String, dynamic>.from(user['kycDocuments'] as Map)
+        : <String, dynamic>{};
+    final profile = user['workerProfile'] is Map
+        ? Map<String, dynamic>.from(user['workerProfile'] as Map)
+        : <String, dynamic>{};
+
+    final front = (kyc['aadhaarFrontPhoto'] ?? data.aadhaarFrontPath)?.toString();
+    final selfie = (kyc['selfieImageUrl'] ??
+            profile['selfieImageUrl'] ??
+            data.selfieImageUrl)
+        ?.toString();
+    final aadhaar = data.aadhaar.replaceAll(' ', '');
+    if (front == null ||
+        front.isEmpty ||
+        selfie == null ||
+        selfie.isEmpty ||
+        aadhaar.isEmpty) {
+      return;
+    }
+    try {
+      await _workersApi.submitVerification(
+        governmentIdType: 'Aadhaar Card',
+        governmentIdNumber: aadhaar,
+        governmentIdFrontUrl: front,
+        governmentIdBackUrl: kyc['aadhaarBackPhoto']?.toString(),
+        selfieImageUrl: selfie,
+      );
+    } catch (_) {
+      // setup-profile already stored KYC; verification AI is optional.
     }
   }
 

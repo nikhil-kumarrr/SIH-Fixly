@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../auth/device_id.dart';
 import '../auth/token_storage.dart';
@@ -32,6 +33,7 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          debugPrint('🌐 [HTTP REQ] ${options.method} ${options.baseUrl}${options.path}');
           if (!_isAuthPath(options.path)) {
             var access = await _tokens.accessToken;
             if (access == null || access.isEmpty) {
@@ -57,7 +59,12 @@ class ApiClient {
           }
           handler.next(options);
         },
+        onResponse: (response, handler) {
+          debugPrint('✅ [HTTP RES] ${response.statusCode} ${response.requestOptions.path}');
+          handler.next(response);
+        },
         onError: (error, handler) async {
+          debugPrint('❌ [HTTP ERR] ${error.response?.statusCode} ${error.requestOptions.path}: ${error.message}');
           // 1. 401 Unauthorized -> Refresh token
           if (error.response?.statusCode == 401 &&
               !_isAuthPath(error.requestOptions.path) &&
@@ -284,6 +291,14 @@ class ApiClient {
             data.contains('Error 1033'))) {
       message =
           'API tunnel is down. Ask host to restart cloudflared + backend.';
+    } else if (data is String &&
+        (data.contains('Cannot POST') ||
+            data.contains('Cannot GET') ||
+            data.contains('<!DOCTYPE html>'))) {
+      // Express default HTML 404 — keep short for UI + fallbacks.
+      final match = RegExp(r'Cannot (POST|GET|PUT|PATCH|DELETE) [^\s<]+')
+          .firstMatch(data);
+      message = match?.group(0) ?? 'Not found';
     } else if (e.type == DioExceptionType.connectionError ||
         e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||

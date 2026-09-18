@@ -2,9 +2,8 @@
 class FeatureFlags {
   FeatureFlags._();
 
-  /// Set to true to enable mock worker (Vaibhav Jain) simulation over Socket.io.
-  /// When false, the worker simulation is completely disabled and does not connect or consume resources.
-  static bool enableMockWorkerSimulation = true;
+  /// Set to true to enable mock worker simulation over Socket.io.
+  static bool enableMockWorkerSimulation = false;
 }
 
 /// Shorthand getter for easy access

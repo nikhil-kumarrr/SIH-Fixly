@@ -12,10 +12,12 @@ import '../../../../app/theme/theme_x.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/map_constants.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/l10n/locale_scope.dart';
 import '../../../../core/location/app_location.dart';
 import '../../../../core/location/location_service.dart';
 import '../../../../core/navigation/customer_navigation.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
@@ -52,14 +54,21 @@ class _CustomerHomeView extends StatefulWidget {
 }
 
 class _CustomerHomeViewState extends State<_CustomerHomeView>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RefreshWhenNavigatedTo {
   bool _locating = false;
   String? _selectedCategoryId; // null = 'All'
   bool _isMapExpanded = false;
   bool _isProgrammaticScroll = false;
-  double? _dragStartY;
   final ScrollController _scrollController = ScrollController();
   late final AnimationController _mapExpandController;
+
+  @override
+  List<String> get refreshRoutePaths => [RouteNames.customerHome];
+
+  @override
+  void onScreenRefresh() {
+    context.read<CustomerHomeCubit>().load(forceNetwork: true);
+  }
 
   @override
   void initState() {
@@ -175,10 +184,6 @@ class _CustomerHomeViewState extends State<_CustomerHomeView>
       ),
       child: Scaffold(
         backgroundColor: const Color(0xFF080F1E),
-        floatingActionButton: AppConstants.voiceAiEnabled
-            ? _buildHeyFlexiFab(context)
-            : null,
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         body: BlocBuilder<CustomerHomeCubit, CustomerHomeState>(
           builder: (context, state) {
             // Filter popular services if a category is selected
@@ -194,48 +199,10 @@ class _CustomerHomeViewState extends State<_CustomerHomeView>
 
             return AppRefreshIndicator(
               onRefresh: _refreshAll,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (scrollInfo) {
-                  if (scrollInfo is ScrollStartNotification &&
-                      scrollInfo.dragDetails != null) {
-                    _dragStartY = scrollInfo.dragDetails!.globalPosition.dy;
-                  }
-
-                  final screenHeight = MediaQuery.of(context).size.height;
-                  final isTopHalf =
-                      _dragStartY != null && _dragStartY! < screenHeight / 2;
-
-                  // If not top half, or map is already open, let normal pull-to-refresh work
-                  if (!isTopHalf || _isMapExpanded) return false;
-
-                  bool isOverscrollingDown = false;
-                  if (scrollInfo is ScrollUpdateNotification) {
-                    if (scrollInfo.metrics.pixels < 0 &&
-                        (scrollInfo.scrollDelta ?? 0) < 0) {
-                      isOverscrollingDown = true;
-                    }
-                  } else if (scrollInfo is OverscrollNotification) {
-                    if (scrollInfo.overscroll < 0) {
-                      isOverscrollingDown = true;
-                    }
-                  }
-
-                  if (isOverscrollingDown) {
-                    if (!_isMapExpanded) {
-                      setState(() => _isMapExpanded = true);
-                      _mapExpandController.forward();
-                    }
-                    return true; // Cancel notification bubbling to block RefreshIndicator
-                  }
-
-                  // Block any overscroll notifications from reaching RefreshIndicator while closed
-                  if (scrollInfo.metrics.pixels < 0) {
-                    return true;
-                  }
-
-                  return false;
-                },
-                child: NestedScrollView(
+              // NestedScrollView body scrolls at depth 1 — required for pull-to-refresh.
+              notificationPredicate: (notification) =>
+                  notification.depth == 0 || notification.depth == 1,
+              child: NestedScrollView(
                   controller: _scrollController,
                   headerSliverBuilder: (context, innerBoxIsScrolled) {
                     return [
@@ -338,7 +305,7 @@ class _CustomerHomeViewState extends State<_CustomerHomeView>
                     color: scheme.surface,
                     child: ListView(
                       padding: const EdgeInsets.only(top: 4, bottom: 36),
-                      physics: const AlwaysScrollableScrollPhysics(),
+                      physics: appRefreshScrollPhysics,
                       children: [
                         // 1. Quick Search & AI Discovery Pill
                         _buildSearchBar(context),
@@ -387,7 +354,6 @@ class _CustomerHomeViewState extends State<_CustomerHomeView>
                     ),
                   ),
                 ),
-              ),
             );
           },
         ),
@@ -620,7 +586,7 @@ class _CustomerHomeViewState extends State<_CustomerHomeView>
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: () => context.goCustomerTab(1),
+            onPressed: () => context.push(RouteNames.sharedSos),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
@@ -846,65 +812,6 @@ class _CustomerHomeViewState extends State<_CustomerHomeView>
     );
   }
 
-  Widget _buildHeyFlexiFab(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF06B6D4), Color(0xFF6366F1)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF06B6D4).withValues(alpha: 0.45),
-            blurRadius: 16,
-            spreadRadius: 2,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(30),
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            context.push('${RouteNames.customerAiChat}?live=1');
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.mic_rounded,
-                    color: Color(0xFF0F172A),
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Hey Flexi',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildShimmerList() {
     return Column(
       children: const [
@@ -1036,7 +943,7 @@ class _CouponBannerCarouselState extends State<_CouponBannerCarousel> {
           ),
         ),
         SizedBox(
-          height: 130,
+          height: 140,
           child: PageView.builder(
             controller: _pageController,
             onPageChanged: (rawIndex) {
@@ -1122,6 +1029,7 @@ class _CouponBannerCarouselState extends State<_CouponBannerCarousel> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Row(
                                     children: [
@@ -1363,15 +1271,22 @@ class _CouponBannerCarouselState extends State<_CouponBannerCarousel> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            24,
+            20,
+            24 + MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -1523,6 +1438,7 @@ class _CouponBannerCarouselState extends State<_CouponBannerCarousel> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -1986,7 +1902,10 @@ class _ServiceTile extends StatelessWidget {
     final estimatedTime = service.estimatedTime?.trim();
     final catColor = _serviceCategoryColor(service.categoryId);
     final catIcon = _serviceCategoryIcon(service.categoryId);
-    final catName = _formatCategoryName(service.categoryId);
+    final localizedCat = localizeCategory(service.categoryId, locale);
+    final catName = localizedCat.isNotEmpty
+        ? localizedCat
+        : _formatCategoryName(service.categoryId);
 
     return Container(
       margin: const EdgeInsets.only(left: 16, right: 16, bottom: 14),
@@ -2104,7 +2023,7 @@ class _ServiceTile extends StatelessWidget {
                                 Text(
                                   service.rating > 0
                                       ? service.rating.toStringAsFixed(1)
-                                      : '4.8',
+                                      : 'New',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,

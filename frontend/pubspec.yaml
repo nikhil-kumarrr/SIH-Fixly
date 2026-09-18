@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.12.2
+  sdk: '>=3.7.0 <4.0.0'
 
 dependencies:
   cached_network_image: ^3.4.1
@@ -22,12 +22,12 @@ dependencies:
   geolocator: ^14.0.3
   go_router: ^18.0.0
   google_fonts: ^6.2.1
-  intl: ^0.20.3
+  intl: ^0.20.2
   mapbox_maps_flutter: ^2.29.1
   shared_preferences: ^2.5.5
   shimmer: ^3.0.0
   speech_to_text: ^7.4.0
-  flutter_tts: ^3.8.2
+  flutter_tts: ^4.2.5
   transit_kit: ^1.0.0
   flutter_native_splash: ^2.4.8
   permission_handler: ^13.0.1
@@ -53,6 +53,14 @@ dependencies:
   web_socket_channel: ^3.0.3
   animated_text_kit: ^4.3.0
   package_info_plus: ^10.2.1
+  audioplayers: ^6.8.1
+  flutter_typeahead: ^6.0.0
+  siri_wave: ^2.3.1
+  # TEMP: siri_orb unused while testing FixlyLiveOrb GIF — uncomment to restore.
+  # siri_orb: ^0.0.3
+  record: ^7.1.1
+  audio_session: ^0.2.4
+  flutter_soloud: ^4.1.7
 
 dev_dependencies:
   flutter_test:
@@ -94,6 +102,7 @@ flutter:
     - assets/config/firebase_client.json
     - assets/config/google-services.json
     - assets/config/GoogleService-Info.plist
+    - assets/data/india_states_districts.json
     - assets/app_icon.png
     - assets/app_name.png
     - assets/splash_wordmark.png
@@ -103,3 +112,12 @@ flutter:
     - assets/icons/stop.png
     - assets/icons/bike_marker.png
     - assets/ai/siri_orb.gif
+    - assets/ai/fixly_live_orb.gif
+    - assets/sounds/ringtone.wav
+    - assets/sounds/calling.wav
+    - assets/sounds/live/start.mp3
+    - assets/sounds/live/th1.mp3
+    - assets/sounds/live/th2.mp3
+    - assets/sounds/live/end.mp3
+    - assets/images/call_bg_light.jpg
+    - assets/images/call_bg_dark.jpg

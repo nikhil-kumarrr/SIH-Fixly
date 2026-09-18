@@ -1,6 +1,6 @@
 import { llm } from "../config/llmModel.js";
 import { FIXLY_SYSTEM_PROMPT } from "../prompts/agentPrompt.js";
-import { detectCategoryFromKeywords } from "../services/workerService.js";
+import { detectCategoryFromKeywords, sameCategory } from "../services/workerService.js";
 
 /**
  * Fast keyword detector for identity questions
@@ -86,8 +86,41 @@ const isConfirmQuery = (text = "") => {
     ].some(w => lower.includes(w));
 };
 
+/** Worker-pick / auto-assign utterance — must not reset booking slots. */
+export const isWorkerSelectUtterance = (text = "") => {
+    const lower = text.toLowerCase();
+    return (
+        lower.includes("select worker") ||
+        lower.includes("select first") ||
+        lower.includes("first worker") ||
+        lower.includes("auto-assign") ||
+        lower.includes("auto assign") ||
+        lower.includes("chuno") ||
+        /[0-9a-fA-F]{24}/.test(text)
+    );
+};
+
+export const parseExplicitBookingType = (text = "") => {
+    const lower = text.toLowerCase().trim();
+    // Worker selection messages must never be read as booking-type answers.
+    if (isWorkerSelectUtterance(text)) return null;
+
+    if (["sos", "emergency", "turant", "urgent", "jaldi", "आपातकालीन", "तत्काल", "danger"].some(w => lower.includes(w))) {
+        return "EMERGENCY_SOS";
+    }
+    // Avoid bare "time"/"date" — too greedy (false SCHEDULED).
+    if (["schedule", "later", "baad me", "kal", "tomorrow", "shaam", "baje", "शेड्यूल", "बाद में", "समय"].some(w => lower.includes(w))) {
+        return "SCHEDULED";
+    }
+    if (["standard", "normal", "regular", "सामान्य", "स्टैंडर्ड"].some(w => lower.includes(w))) {
+        return "STANDARD";
+    }
+    return null;
+};
+
 /**
- * Router Node: Classifies intent and extracts slots using LLM with rule fallback
+ * Router Node: LLM extracts slots; THIS code owns flow (deterministic FSM).
+ * Filled slots are sticky — never wiped by LLM null / alias category labels.
  */
 export const agentRouter = async (state) => {
     const text = (state.prompt || "").trim();
@@ -139,15 +172,15 @@ export const agentRouter = async (state) => {
         };
     }
 
-    // 2. LLM Intent & Slot Extraction
+    // 2. LLM Intent & Slot Extraction (optional enrichment only)
     let extracted = {
         intent: "BOOKING_FLOW",
-        category: state.category || detectCategoryFromKeywords(text),
-        bookingType: state.bookingType || null,
-        isEmergency: state.isEmergency || false,
-        scheduledTime: state.scheduledTime || null,
+        category: null,
+        bookingType: null,
+        isEmergency: false,
+        scheduledTime: null,
         workerSelection: null,
-        problemDescription: state.problemDescription || null,
+        problemDescription: null,
         confirmation: false,
         reply: null
     };
@@ -155,7 +188,7 @@ export const agentRouter = async (state) => {
     try {
         const promptContext = `${FIXLY_SYSTEM_PROMPT}
 
-Current Slot State:
+Current Slot State (DO NOT clear filled slots unless user clearly changes service):
 ${JSON.stringify({
     category: state.category,
     bookingType: state.bookingType,
@@ -167,6 +200,11 @@ ${JSON.stringify({
 
 User Message: "${text}"
 Target Language: ${lang}
+
+Rules:
+- If user is selecting a worker (Select worker / ID / Auto-assign), keep category+bookingType unchanged; set workerSelection.
+- If bookingType already filled, only change it when user explicitly picks Emergency/Standard/Schedule.
+- Return ONLY JSON.
 
 Analyze the message and return ONLY the JSON object.`;
 
@@ -185,55 +223,79 @@ Analyze the message and return ONLY the JSON object.`;
         if (parsed.reply) extracted.reply = parsed.reply;
     } catch (err) {
         console.warn("[Router] LLM extraction fallback to rules:", err.message);
-        const fastCategory = detectCategoryFromKeywords(text);
-        if (fastCategory) extracted.category = fastCategory;
-        const explicitFromKeywords = parseExplicitBookingType(text);
-        if (explicitFromKeywords) {
-            extracted.bookingType = explicitFromKeywords;
-            extracted.isEmergency = explicitFromKeywords === "EMERGENCY_SOS";
-        }
         if (isConfirmQuery(text)) {
             extracted.confirmation = true;
             if (state.step === "AWAITING_CONFIRMATION") extracted.intent = "CONFIRMATION";
         }
     }
 
+    const selectingWorker = isWorkerSelectUtterance(text);
+    const keywordCat = detectCategoryFromKeywords(text);
     const explicitType = parseExplicitBookingType(text);
-    const detectedCat = detectCategoryFromKeywords(text) || extracted.category;
-    const isCategorySwitched = Boolean(detectedCat && state.category && detectedCat.toLowerCase() !== state.category.toLowerCase());
 
-    const activeCategory = isCategorySwitched ? detectedCat : (detectedCat || state.category);
-    const resolvedBookingType = isCategorySwitched ? explicitType : (state.bookingType || explicitType || (extracted.bookingType && explicitType ? extracted.bookingType : null));
+    // Real category switch ONLY when user keywords name a different service.
+    // LLM alias Electrical vs DB electrician must NOT count as a switch.
+    const isCategorySwitched = Boolean(
+        keywordCat &&
+        state.category &&
+        !selectingWorker &&
+        !sameCategory(keywordCat, state.category)
+    );
+
+    const activeCategory = isCategorySwitched
+        ? keywordCat
+        : (state.category || keywordCat || extracted.category || null);
+
+    // Sticky bookingType: never drop a filled slot on LLM noise / alias category.
+    let resolvedBookingType = state.bookingType || null;
+    if (isCategorySwitched) {
+        resolvedBookingType = explicitType; // may be null until user picks again
+    } else if (explicitType) {
+        resolvedBookingType = explicitType;
+    } else if (
+        !resolvedBookingType &&
+        extracted.bookingType &&
+        state.step === "AWAITING_BOOKING_TYPE"
+    ) {
+        // Accept LLM bookingType only while actively asking for it — never invent on turn 1.
+        resolvedBookingType = extracted.bookingType;
+    }
+
+    // Stuck-session recovery: already past booking-type step but slot missing.
+    if (
+        !resolvedBookingType &&
+        ["AWAITING_WORKER_SELECTION", "AWAITING_CONFIRMATION", "AWAITING_SCHEDULE_TIME"].includes(state.step)
+    ) {
+        resolvedBookingType = "STANDARD";
+    }
+
+    const problemDescription = isCategorySwitched
+        ? (extracted.problemDescription || text)
+        : (
+            selectingWorker
+                ? (state.problemDescription || extracted.problemDescription || text)
+                : (extracted.problemDescription || state.problemDescription || text)
+        );
 
     return {
         ...state,
         intent: extracted.intent,
         category: activeCategory,
         bookingType: resolvedBookingType,
-        isEmergency: resolvedBookingType === "EMERGENCY_SOS" || (explicitType === "EMERGENCY_SOS"),
-        scheduledTime: isCategorySwitched ? (extracted.scheduledTime || null) : (extracted.scheduledTime || state.scheduledTime),
+        isEmergency: resolvedBookingType === "EMERGENCY_SOS" || explicitType === "EMERGENCY_SOS",
+        scheduledTime: isCategorySwitched
+            ? (extracted.scheduledTime || null)
+            : (extracted.scheduledTime || state.scheduledTime || null),
         workerId: isCategorySwitched ? null : state.workerId,
         workerName: isCategorySwitched ? null : state.workerName,
         workerRate: isCategorySwitched ? null : state.workerRate,
-        workerSelection: extracted.workerSelection,
-        problemDescription: isCategorySwitched ? (extracted.problemDescription || text) : (extracted.problemDescription || state.problemDescription || text),
+        workerSelection: selectingWorker
+            ? (extracted.workerSelection || text)
+            : extracted.workerSelection,
+        problemDescription,
         confirmation: extracted.confirmation,
         llmReply: extracted.reply
     };
-};
-
-export const parseExplicitBookingType = (text = "") => {
-    const lower = text.toLowerCase().trim();
-    if (["sos", "emergency", "turant", "urgent", "jaldi", "आपातकालीन", "तत्काल", "danger"].some(w => lower.includes(w))) {
-        return "EMERGENCY_SOS";
-    }
-    if (["schedule", "later", "baad me", "kal", "tomorrow", "shaam", "baje", "date", "time", "शेड्यूल", "बाद में", "समय"].some(w => lower.includes(w))) {
-        return "SCHEDULED";
-    }
-    if (["standard", "normal", "regular", "सामान्य", "स्टैंडर्ड"].some(w => lower.includes(w))) {
-        return "STANDARD";
-    }
-    return null;
 };
 
 export default agentRouter;

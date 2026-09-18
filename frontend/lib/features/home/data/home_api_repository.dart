@@ -25,45 +25,15 @@ class HomeApiRepository {
 
   final ApiClient _api;
 
-  static const List<CouponBanner> defaultBanners = [
-    CouponBanner(
-      id: 'ban_1',
-      title: 'Flat 50% Off First Booking',
-      code: 'FIXLY50',
-      discount: '50% OFF',
-      description: 'Get 50% discount up to ₹150 on your first home service',
-      gradientColors: ['#1E3A8A', '#3B82F6'],
-    ),
-    CouponBanner(
-      id: 'ban_2',
-      title: 'AC & Appliance Mega Saver',
-      code: 'COOL20',
-      discount: '20% OFF',
-      description: 'Save up to ₹250 on all AC & appliance repair bookings',
-      gradientColors: ['#047857', '#10B981'],
-    ),
-    CouponBanner(
-      id: 'ban_3',
-      title: 'Super Weekend Special',
-      code: 'WEEKEND100',
-      discount: '₹100 FLAT',
-      description: 'Flat ₹100 instant cash discount on electrician & plumber orders',
-      gradientColors: ['#7C2D12', '#EA580C'],
-    ),
-  ];
-
   Future<List<CouponBanner>> fetchBanners() async {
-    try {
-      final res = await _api.get(ApiEndpoints.banners);
-      if (res['success'] == true && res['banners'] is List) {
-        final list = (res['banners'] as List)
-            .whereType<Map>()
-            .map((e) => CouponBanner.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
-        if (list.isNotEmpty) return list;
-      }
-    } catch (_) {}
-    return defaultBanners;
+    final res = await _api.get(ApiEndpoints.banners);
+    if (res['success'] != true || res['banners'] is! List) {
+      return const [];
+    }
+    return (res['banners'] as List)
+        .whereType<Map>()
+        .map((e) => CouponBanner.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 
   Future<HomeBundle> fetchHome({bool forceNetwork = false}) async {
@@ -81,7 +51,7 @@ class HomeApiRepository {
       categories = _mapCategoryList(data['categories'], topServices);
     }
 
-    List<CouponBanner> banners = defaultBanners;
+    List<CouponBanner> banners = const [];
     if (data['banners'] is List && (data['banners'] as List).isNotEmpty) {
       banners = (data['banners'] as List)
           .whereType<Map>()
@@ -91,7 +61,7 @@ class HomeApiRepository {
       try {
         banners = await fetchBanners();
       } catch (_) {
-        banners = defaultBanners;
+        banners = const [];
       }
     }
 
@@ -156,10 +126,11 @@ class HomeApiRepository {
         ? included.map((e) => e.toString()).join(', ')
         : ((json['displayDescription'] ?? json['description'] ?? json['estimatedTime'])?.toString() ?? '');
     final price = (json['basePrice'] as num?)?.toDouble() ?? 0;
-    final title = (json['displayTitle'] ?? json['title'] as String?) ?? 'Service';
+    final rawTitle = (json['displayTitle'] ?? json['title'] as String?) ?? 'Service';
+    final title = _titleCase(rawTitle);
     return ServiceItem(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
-      categoryId: (json['category'] ?? '').toString(),
+      categoryId: (json['category'] ?? '').toString().toLowerCase().trim(),
       title: title,
       titleHi: (json['titleHi'] as String?) ?? title,
       description: desc,
@@ -222,11 +193,7 @@ class HomeApiRepository {
     final normalized = key.toLowerCase().trim();
     for (final c in ServiceCategories.all) {
       if (c.id == normalized ||
-          c.nameEn.toLowerCase() == normalized ||
-          c.nameEn.toLowerCase().startsWith(normalized) ||
-          normalized.contains(c.id) ||
-          // backend typo "plumer"
-          (normalized.startsWith('plum') && c.id == 'plumber')) {
+          c.nameEn.toLowerCase() == normalized) {
         return ServiceCategory(
           id: c.id,
           nameEn: c.nameEn,
@@ -238,22 +205,16 @@ class HomeApiRepository {
         );
       }
     }
+    final titleCased = _titleCase(key);
+    final finalName = displayName != null ? _titleCase(displayName) : titleCased;
     return ServiceCategory(
-      id: key,
-      nameEn: displayName ?? _titleCase(key),
-      nameHi: displayName ?? _titleCase(key),
-      translations: displayName != null
-          ? {
-              'en': displayName,
-              'hi': displayName,
-              'mr': displayName,
-              'ta': displayName,
-              'te': displayName,
-              'kn': displayName,
-              'bn': displayName,
-              'gu': displayName,
-            }
-          : null,
+      id: normalized,
+      nameEn: finalName,
+      nameHi: finalName,
+      translations: {
+        'en': finalName,
+        'hi': finalName,
+      },
       gradient: AppColors.primaryGradient,
       icon: Icons.handyman_rounded,
       imageUrl: imageUrl,
@@ -262,6 +223,11 @@ class HomeApiRepository {
 
   static String _titleCase(String s) {
     if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1);
+    final clean = s.replaceAll(RegExp(r'[_-]+'), ' ').trim();
+    return clean
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+        .join(' ');
   }
 }

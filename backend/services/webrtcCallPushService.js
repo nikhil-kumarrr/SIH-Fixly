@@ -35,9 +35,6 @@ export const sendIncomingCallPush = async ({
             return { success: false, reason: 'NO_ACTIVE_TOKENS' };
         }
 
-        const title = `Incoming Call from ${callerRole === 'customer' ? 'Customer' : 'Worker'}`;
-        const body = `${callerName || 'Worker'} is calling regarding booking ${bookingId}`;
-
         // High priority data payload for Flutter CallKit / ConnectionService
         const callPayload = {
             type: 'INCOMING_CALL',
@@ -46,7 +43,7 @@ export const sendIncomingCallPush = async ({
             callerId: String(callerId || ''),
             callerName: String(callerName || (callerRole === 'customer' ? 'Customer' : 'Worker')),
             callerAvatar: String(callerAvatar || ''),
-            callerRole: String(callerRole || 'worker'),
+            callerRole: String(callerRole === 'customer' ? 'customer' : 'worker'),
             serviceTitle: String(serviceTitle || 'Gig Service'),
             hasAudio: 'true',
             hasVideo: 'false',
@@ -57,18 +54,11 @@ export const sendIncomingCallPush = async ({
             try {
                 await sendToToken({
                     token,
-                    title,
-                    body,
                     data: callPayload,
+                    dataOnly: true,
                     android: {
                         priority: 'high',
-                        ttl: 30000, // 30 seconds ringing timeout
-                        notification: {
-                            sound: 'ringtone',
-                            channelId: 'gigconnect_call_channel',
-                            priority: 'max',
-                            visibility: 'public'
-                        }
+                        ttl: 30000 // 30 seconds ringing timeout
                     },
                     apns: {
                         headers: {
@@ -77,8 +67,6 @@ export const sendIncomingCallPush = async ({
                         },
                         payload: {
                             aps: {
-                                alert: { title, body },
-                                sound: 'ringtone.aiff',
                                 'content-available': 1
                             }
                         }
@@ -132,9 +120,8 @@ export const sendCancelCallPush = async ({
             activeTokens.map(({ token }) =>
                 sendToToken({
                     token,
-                    title: 'Call Cancelled',
-                    body: 'The caller has hung up',
                     data: cancelPayload,
+                    dataOnly: true,
                     android: { priority: 'high', ttl: 10000 },
                     apns: { headers: { 'apns-priority': '10' } }
                 }).catch(() => {})

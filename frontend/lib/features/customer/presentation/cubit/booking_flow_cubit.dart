@@ -33,14 +33,19 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
   StreamSubscription<Map<String, dynamic>>? _statusSubscription;
   String? _listeningBookingId;
 
+  void _safeEmit(BookingFlowState next) {
+    if (isClosed) return;
+    emit(next);
+  }
+
   void selectService(ServiceItem service) {
-    emit(state.copyWith(service: service, step: BookingStatus.draft));
+    _safeEmit(state.copyWith(service: service, step: BookingStatus.draft));
   }
 
   /// Load an existing booking into state (e.g. from order history tap).
   void loadFromBooking(Booking booking) {
     _repo.activeBooking = booking;
-    emit(state.copyWith(
+    _safeEmit(state.copyWith(
       booking: booking,
       step: booking.status,
       clearError: true,
@@ -52,7 +57,8 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
   void startStatusPolling(String bookingId) {
     _statusPollTimer?.cancel();
     _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      await refreshBooking();
+      if (isClosed) return;
+      await refreshBooking(bookingId);
     });
   }
 
@@ -63,13 +69,14 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
 
   /// Connect to socket and listen for real-time booking_status_update events.
   void listenToSocketUpdates(String bookingId) {
-    if (bookingId.isEmpty) return;
+    if (bookingId.isEmpty || isClosed) return;
     if (_listeningBookingId == bookingId && _statusSubscription != null) return;
     _listeningBookingId = bookingId;
     CustomerRealtimeService.instance.trackBooking(bookingId);
 
     _statusSubscription?.cancel();
     _statusSubscription = CustomerRealtimeService.instance.bookingStatusStream.listen((map) async {
+      if (isClosed) return;
       final eventBookingId = map['bookingId']?.toString();
       final canonicalId = map['canonicalBookingId']?.toString();
       final current = state.booking;
@@ -87,7 +94,7 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
       // Instant UI from socket payload, then hydrate via API.
       if (current != null && (newStatus != null || paymentStatus != null)) {
         final mapped = BookingsApiRepository.mapStatus(newStatus ?? current.rawStatus);
-        emit(
+        _safeEmit(
           state.copyWith(
             booking: current.copyWith(
               status: paymentStatus == 'PAID' ? BookingStatus.paid : mapped,
@@ -100,6 +107,7 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
           ),
         );
       }
+      if (isClosed) return;
       await refreshBooking(bookingId);
     });
 
@@ -114,26 +122,31 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
     String? workerId,
     List<String> photoPaths = const [],
     List<String> videoPaths = const [],
+    bool isEmergency = false,
   }) async {
     final service = state.service;
     if (service == null) {
-      emit(state.copyWith(errorMessage: 'Please select a service first'));
+      _safeEmit(state.copyWith(errorMessage: 'Please select a service first'));
       return;
     }
-    emit(state.copyWith(isLoading: true, clearError: true));
+    _safeEmit(state.copyWith(isLoading: true, clearError: true));
     try {
       final booking = await _bookings.create(
         serviceId: service.id,
         addressLine: address,
         problemDescription: problemDescription,
         workerId: workerId,
-        scheduledTime: scheduledAt,
+        scheduledTime: isEmergency ? null : scheduledAt,
         serviceTitle: service.title,
         photoPaths: photoPaths,
         videoPaths: videoPaths,
+        isEmergency: isEmergency,
+        bookingType: isEmergency ? 'EMERGENCY_SOS' : null,
+        timeSlot: isEmergency ? 'Immediate (SOS Emergency)' : null,
       );
+      if (isClosed) return;
       _repo.activeBooking = booking;
-      emit(
+      _safeEmit(
         state.copyWith(
           booking: booking,
           address: address,
@@ -144,20 +157,21 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
       );
       listenToSocketUpdates(booking.id);
     } on ApiException catch (e) {
-      emit(state.copyWith(isLoading: false, errorMessage: e.message));
+      _safeEmit(state.copyWith(isLoading: false, errorMessage: e.message));
     } catch (e) {
-      emit(state.copyWith(isLoading: false, errorMessage: e.toString()));
+      _safeEmit(state.copyWith(isLoading: false, errorMessage: e.toString()));
     }
   }
 
   Future<void> confirmEstimate() async {
-    emit(state.copyWith(isLoading: false, step: BookingStatus.draft));
+    _safeEmit(state.copyWith(isLoading: false, step: BookingStatus.draft));
   }
 
   Future<void> searchWorker() async {
-    emit(state.copyWith(isLoading: true, step: BookingStatus.searching));
+    _safeEmit(state.copyWith(isLoading: true, step: BookingStatus.searching));
     await Future<void>.delayed(const Duration(seconds: 1));
-    emit(
+    if (isClosed) return;
+    _safeEmit(
       state.copyWith(
         isLoading: false,
         step: BookingStatus.searching,
@@ -169,14 +183,15 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
   Future<void> workerAccepted() async {
     final booking = state.booking;
     if (booking == null) return;
-    emit(state.copyWith(isLoading: true, clearError: true));
+    _safeEmit(state.copyWith(isLoading: true, clearError: true));
     try {
       final updated = await _bookings.getById(
         booking.id,
         serviceTitle: booking.serviceTitle,
       );
+      if (isClosed) return;
       _repo.activeBooking = updated;
-      emit(
+      _safeEmit(
         state.copyWith(
           isLoading: false,
           step: updated.workerId != null
@@ -186,11 +201,12 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
         ),
       );
     } on ApiException catch (e) {
-      emit(state.copyWith(isLoading: false, errorMessage: e.message));
+      _safeEmit(state.copyWith(isLoading: false, errorMessage: e.message));
     }
   }
 
   Future<void> refreshBooking([String? bookingId]) async {
+    if (isClosed) return;
     final idToFetch = bookingId ?? state.booking?.id;
     if (idToFetch == null) return;
     try {
@@ -198,12 +214,13 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
         idToFetch,
         serviceTitle: state.booking?.serviceTitle ?? 'Fixly Service',
       );
+      if (isClosed) return;
       _repo.activeBooking = updated;
-      emit(state.copyWith(booking: updated, step: updated.status, clearError: true));
+      _safeEmit(state.copyWith(booking: updated, step: updated.status, clearError: true));
       // Keep socket joined for live status without manual reload.
       listenToSocketUpdates(updated.id);
     } on ApiException catch (e) {
-      emit(state.copyWith(errorMessage: e.message));
+      _safeEmit(state.copyWith(errorMessage: e.message));
     }
   }
 
@@ -237,9 +254,10 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
   }) async {
     final targetBookingId = bookingId ?? state.booking?.id;
     if (targetBookingId == null) return false;
-    emit(state.copyWith(isLoading: true, clearError: true));
+    _safeEmit(state.copyWith(isLoading: true, clearError: true));
     try {
       await refreshBooking(targetBookingId);
+      if (isClosed) return false;
       final current = state.booking;
       if (current == null) {
         throw ApiException('Booking details not found');
@@ -274,13 +292,14 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
       }
 
       await refreshBooking(current.id);
+      if (isClosed) return false;
       final updated = state.booking ??
           current.copyWith(
             status: BookingStatus.paid,
             paymentStatus: 'PAID',
           );
       _repo.activeBooking = updated;
-      emit(
+      _safeEmit(
         state.copyWith(
           isLoading: false,
           step: BookingStatus.rating,
@@ -289,10 +308,15 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
       );
       return true;
     } on ApiException catch (e) {
-      emit(state.copyWith(isLoading: false, errorMessage: e.message));
+      _safeEmit(state.copyWith(isLoading: false, errorMessage: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(isLoading: false, errorMessage: e.toString()));
+      _safeEmit(
+        state.copyWith(
+          isLoading: false,
+          errorMessage: ApiException.fromError(e),
+        ),
+      );
       return false;
     }
   }
@@ -304,13 +328,16 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
     _listeningBookingId = null;
     _razorpay.dispose();
     _repo.activeBooking = null;
-    emit(const BookingFlowState());
+    _safeEmit(const BookingFlowState());
   }
 
   @override
   Future<void> close() {
     _statusPollTimer?.cancel();
+    _statusPollTimer = null;
     _statusSubscription?.cancel();
+    _statusSubscription = null;
+    _listeningBookingId = null;
     CustomerRealtimeService.instance.untrackBooking();
     _razorpay.dispose();
     return super.close();

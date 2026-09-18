@@ -40,15 +40,23 @@ abstract final class WorkerSetupProfileMapper {
         ? loc.addressLabel
         : null;
 
+    final recentWorkPhotos = <String>[];
+    for (final path in data.recentWorkPhotoPaths) {
+      final uri = await _toDataUri(path);
+      if (uri != null && uri.isNotEmpty) recentWorkPhotos.add(uri);
+    }
+
     return {
       'name': data.fullName.trim(),
       'phone': data.phone.trim(),
       if (dobStr != null) 'dateOfBirth': dobStr,
       if (data.gender != null) 'gender': data.gender!.name,
       if (avatar != null) 'avatar': avatar,
+      if (avatar != null) 'selfieImageUrl': avatar,
       if (primaryCategory != null) 'category': primaryCategory,
       'categories': categories,
       'rate': data.primaryRate,
+      'hourlyRate': data.primaryRate,
       'categoryRates': data.categoryRatesPayload,
       'experienceYears': data.experienceYears,
       'bio': data.bio.trim(),
@@ -60,10 +68,15 @@ abstract final class WorkerSetupProfileMapper {
       'panNumber': data.pan.trim().toUpperCase(),
       if (panFront != null) 'panFrontPhoto': panFront,
       if (panBack != null) 'panBackPhoto': panBack,
+      'govermentIdType': 'Aadhaar Card',
+      'govermentIdNumber': data.aadhaar.replaceAll(' ', ''),
       if (workAddress != null) 'workAddress': workAddress,
       if (loc.hasFix) 'location': loc.toGeoJsonPointOrNull(),
       if (data.state.trim().isNotEmpty) 'state': data.state.trim(),
       if (data.district.trim().isNotEmpty) 'district': data.district.trim(),
+      if (data.hasEshram && data.eshramUan.trim().isNotEmpty)
+        'eshramUan': data.eshramUan.trim(),
+      if (recentWorkPhotos.isNotEmpty) 'recentWorkPhotos': recentWorkPhotos,
       'payoutMethod': data.payoutMethod.name,
       'bank': {
         'accountHolderName': data.accountHolderName.trim(),

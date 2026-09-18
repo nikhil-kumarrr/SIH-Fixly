@@ -35,6 +35,7 @@ class AiApiRepository {
     List<double>? coordinates,
     String? addressLine,
   }) async {
+    print("🤖 AiApiRepository: chatWithAgent called with message: $message");
     final payload = <String, dynamic>{
       'message': message,
       'conversationState': conversationState ?? <String, dynamic>{},
@@ -58,50 +59,6 @@ class AiApiRepository {
       throw ApiException(res['message']?.toString() ?? 'AI agent failed');
     }
 
-    return AiAgentResponse.fromJson(res);
-  }
-
-  Future<Map<String, dynamic>> mintLiveToken({String? language}) async {
-    final res = await _api.post(
-      ApiEndpoints.aiAgentLiveToken,
-      data: {
-        if (language != null && language.isNotEmpty) 'language': language,
-      },
-    );
-    if (res['success'] != true) {
-      throw ApiException(res['message']?.toString() ?? 'Live token failed');
-    }
-    return Map<String, dynamic>.from(res);
-  }
-
-  Future<AiAgentResponse> liveToolBridge({
-    required String utterance,
-    Map<String, dynamic>? conversationState,
-    String? language,
-    List<double>? coordinates,
-    String? addressLine,
-  }) async {
-    final payload = <String, dynamic>{
-      'utterance': utterance,
-      'conversationState': conversationState ?? <String, dynamic>{},
-    };
-    if (language != null && language.isNotEmpty) {
-      payload['language'] = language;
-    }
-    if (coordinates != null && coordinates.length >= 2) {
-      payload['coordinates'] = coordinates;
-    }
-    if (addressLine != null && addressLine.isNotEmpty) {
-      payload['addressLine'] = addressLine;
-    }
-
-    final res = await _api.post(
-      ApiEndpoints.aiAgentLiveTool,
-      data: payload,
-    );
-    if (res['success'] != true) {
-      throw ApiException(res['message']?.toString() ?? 'Live tool failed');
-    }
     return AiAgentResponse.fromJson(res);
   }
 

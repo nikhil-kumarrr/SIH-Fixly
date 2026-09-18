@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
-import { ShieldCheck, Lock, Mail, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { loginAdmin } = useApp();
   const { showToast } = useToast();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('test@gmail.com');
+  const [password, setPassword] = useState('test');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -140,7 +141,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Password Field */}
+          {/* Password Field with Hide / Show Eye Toggle */}
           <div style={{ marginBottom: '24px' }}>
             <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
               Password
@@ -158,7 +159,7 @@ export default function LoginPage() {
             >
               <Lock size={18} color="#94a3b8" />
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
                 autoComplete="new-password"
                 value={password}
@@ -173,6 +174,23 @@ export default function LoginPage() {
                   color: '#1e293b'
                 }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  color: showPassword ? '#15803d' : '#94a3b8',
+                  transition: 'color 0.15s ease'
+                }}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 

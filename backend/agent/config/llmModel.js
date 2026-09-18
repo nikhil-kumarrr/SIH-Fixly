@@ -60,14 +60,12 @@ export const llm = {
             if (gemini) return gemini;
         } catch (err) {
             lastError = err;
-            console.warn(`[LLM] Gemini brain failed: ${err.message.slice(0, 120)}. Trying Groq...`);
         }
         try {
             const groq = await invokeGroq(prompt, options);
             if (groq) return groq;
         } catch (err) {
             lastError = err;
-            console.warn(`[LLM] Groq fallback failed: ${err.message.slice(0, 120)}`);
         }
         throw lastError || new Error("No LLM provider available or configured.");
     },
@@ -83,14 +81,12 @@ export const llm = {
             if (groq) return groq;
         } catch (err) {
             lastError = err;
-            console.warn(`[LLM] Groq chat failed: ${err.message.slice(0, 120)}. Trying Gemini...`);
         }
         try {
             const gemini = await invokeGemini(prompt, options);
             if (gemini) return gemini;
         } catch (err) {
             lastError = err;
-            console.warn(`[LLM] Gemini chat fallback failed: ${err.message.slice(0, 120)}`);
         }
         throw lastError || new Error("No LLM chat provider available.");
     },

@@ -12,21 +12,26 @@ import {
   Phone,
   Battery,
   Map as MapIcon,
+  CheckCircle,
 } from 'lucide-react';
 import Badge from '../../components/common/Badge';
 import Pagination from '../../components/common/Pagination';
 import AddWorkerModal from '../../components/modals/AddWorkerModal';
 import LiveMapModal from '../../components/LiveMapModal';
 import Avatar from '../../components/common/Avatar';
+import { getMergedCategories } from '../../data/services';
 
 export default function WorkersPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { workers, workersPagination, fetchWorkers, suspendWorker } = useApp();
+  const { workers, workersPagination, fetchWorkers, suspendWorker, verifyWorker, rejectWorker, services } = useApp();
+
+  const tradeOptions = React.useMemo(() => getMergedCategories(services), [services]);
 
   // Search & Filter states
   const [search, setSearch] = useState('');
   const [serviceFilter, setServiceFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
   const [availabilityFilter, setAvailabilityFilter] = useState('All');
   const [cityFilter, setCityFilter] = useState('All');
   const [sortField, setSortField] = useState('rating');
@@ -61,15 +66,17 @@ export default function WorkersPage() {
   };
 
   React.useEffect(() => {
-    // Workers tab = approved members only. Pending KYC lives under Verification.
-    fetchWorkers({
+    const params = {
       page: currentPage,
       limit: pageSize,
-      q: search || undefined,
+      search: search || undefined,
       category: serviceFilter !== 'All' ? serviceFilter : '',
-      isVerified: 'true',
-    });
-  }, [fetchWorkers, currentPage, search, serviceFilter]);
+    };
+    if (statusFilter === 'Verified') params.isVerified = 'true';
+    if (statusFilter === 'Pending') params.isVerified = 'false';
+    if (statusFilter === 'Rejected') params.kycStatus = 'rejected';
+    fetchWorkers(params);
+  }, [fetchWorkers, currentPage, search, serviceFilter, statusFilter]);
 
   let filtered = [...workers];
 
@@ -114,6 +121,16 @@ export default function WorkersPage() {
     });
   }
 
+  // Verification / Status Filter
+  if (statusFilter && statusFilter !== 'All') {
+    filtered = filtered.filter((w) => {
+      if (statusFilter === 'Verified') return w.isVerified || w.verification === 'Verified';
+      if (statusFilter === 'Pending') return !w.isVerified && w.verification !== 'Rejected';
+      if (statusFilter === 'Rejected') return w.kycStatus === 'rejected' || w.verification === 'Rejected';
+      return true;
+    });
+  }
+
   // Sort logic
   filtered.sort((a, b) => {
     let valA = a[sortField] || '';
@@ -149,10 +166,10 @@ export default function WorkersPage() {
       >
         <div>
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
-            Verified workers ({workersPagination?.total ?? workers.length})
+            Workers Directory ({workersPagination?.total ?? filtered.length})
           </h2>
           <p style={{ fontSize: '13px', color: '#64748b' }}>
-            Approved cooperative members only. Pending KYC is under Verification.
+            Manage all registered cooperative workers, verify KYC, and track activity.
           </p>
         </div>
 
@@ -241,6 +258,28 @@ export default function WorkersPage() {
 
         {/* Dropdown Filters */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Status filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{
+              padding: '7px 10px',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              fontSize: '12.5px',
+              fontWeight: '600',
+              backgroundColor: '#ffffff',
+            }}
+          >
+            <option value="All">All Statuses</option>
+            <option value="Verified">Verified Only</option>
+            <option value="Pending">Pending / In Review</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+
           {/* Service filter */}
           <select
             value={serviceFilter}
@@ -258,14 +297,9 @@ export default function WorkersPage() {
             }}
           >
             <option value="All">All Trades</option>
-            <option value="Plumbing">Plumbing</option>
-            <option value="Electrical">Electrical</option>
-            <option value="Carpentry">Carpentry</option>
-            <option value="Cleaning">Cleaning</option>
-            <option value="AC Repair">AC Repair</option>
-            <option value="Caregiving">Caregiving</option>
-            <option value="Painting">Painting</option>
-            <option value="Driving">Driving</option>
+            {tradeOptions.map((trade) => (
+              <option key={trade} value={trade}>{trade}</option>
+            ))}
           </select>
 
           {/* City filter */}
@@ -295,37 +329,40 @@ export default function WorkersPage() {
         </div>
       </div>
 
-      {/* Workers Table */}
+      {/* Workers Table Card */}
       <div
+        className="table-responsive"
         style={{
           backgroundColor: '#ffffff',
           borderRadius: '14px',
           border: '1px solid var(--border-light)',
-          overflow: 'hidden',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          width: '100%',
           boxShadow: 'var(--shadow-card)',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <table style={{ minWidth: '850px', width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
-            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700' }}>
-              <th style={{ padding: '14px 18px' }}>Profile & Name</th>
-              <th style={{ padding: '14px 18px' }}>Trade & Skills</th>
-              <th style={{ padding: '14px 18px' }}>Location</th>
-              <th onClick={() => toggleSort('rating')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+            <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Profile & Name</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Trade & Skills</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Location</th>
+              <th onClick={() => toggleSort('rating')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Rating</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th onClick={() => toggleSort('completedJobs')} style={{ padding: '14px 18px', cursor: 'pointer' }}>
+              <th onClick={() => toggleSort('completedJobs')} style={{ padding: '14px 18px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>Jobs Completed</span>
                   <ArrowUpDown size={12} />
                 </div>
               </th>
-              <th style={{ padding: '14px 18px' }}>Availability</th>
-              <th style={{ padding: '14px 18px' }}>Verification</th>
-              <th style={{ padding: '14px 18px', textAlign: 'right' }}>Actions</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Availability</th>
+              <th style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>Verification</th>
+              <th style={{ padding: '14px 18px', textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -403,6 +440,22 @@ export default function WorkersPage() {
                     >
                       <Eye size={14} />
                     </button>
+
+                    {w.verification !== 'Verified' && (
+                      <button
+                        onClick={() => verifyWorker(w.id)}
+                        title="Approve Worker"
+                        style={{
+                          padding: '6px 8px',
+                          backgroundColor: '#ecfdf5',
+                          color: '#059669',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <CheckCircle size={14} />
+                      </button>
+                    )}
 
                     <button
                       onClick={() => suspendWorker(w.id)}

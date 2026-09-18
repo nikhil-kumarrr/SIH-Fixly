@@ -132,7 +132,7 @@ export default function AIInsightsPage() {
   };
 
   return (
-    <div style={{ padding: '0 32px 32px 32px', animation: 'fadeIn 0.2s ease', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+    <div className="page-container" style={{ padding: '0 32px 32px 32px', animation: 'fadeIn 0.2s ease', display: 'flex', flexDirection: 'column', gap: '22px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
@@ -150,7 +150,7 @@ export default function AIInsightsPage() {
 
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-light)', marginBottom: '18px' }}>
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-light)', marginBottom: '18px', overflowX: 'auto' }}>
         {[
           { key: 'insights', label: 'AI Directives' },
           { key: 'heatmap', label: 'Demand Heatmap' },
@@ -166,7 +166,8 @@ export default function AIInsightsPage() {
               borderBottom: activeTab === t.key ? '2.5px solid var(--primary-brand)' : 'none',
               marginBottom: '-1px',
               background: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
             }}
           >
             {t.label}
@@ -178,7 +179,7 @@ export default function AIInsightsPage() {
         <>
       {/* Summary KPI Banner */}
       {aiData.summary && (
-        <div style={{ backgroundColor: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '16px', padding: '20px 24px', boxShadow: 'var(--shadow-card)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        <div style={{ backgroundColor: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '16px', padding: '20px 24px', boxShadow: 'var(--shadow-card)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           <div>
             <div style={{ fontSize: '12px', color: '#64748b' }}>Dispatch Algorithm Confidence</div>
             <div style={{ fontSize: '22px', fontWeight: '800', color: '#15803d', marginTop: '4px' }}>
@@ -293,29 +294,29 @@ export default function AIInsightsPage() {
           <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#111827', marginBottom: '14px' }}>
             Category Demand & Inflow Forecast
           </h3>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-light)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+          <div className="table-responsive" style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-light)', overflowX: 'auto', boxShadow: 'var(--shadow-card)' }}>
+            <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700' }}>
-                  <th style={{ padding: '12px 18px' }}>Service Trade</th>
-                  <th style={{ padding: '12px 18px' }}>Current Activity</th>
-                  <th style={{ padding: '12px 18px' }}>Trend Status</th>
-                  <th style={{ padding: '12px 18px' }}>Active Bookings</th>
-                  <th style={{ padding: '12px 18px' }}>Peak Service Hours</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Service Trade</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Current Activity</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Trend Status</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Active Bookings</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Peak Service Hours</th>
                 </tr>
               </thead>
               <tbody>
                 {aiData.demandForecast.map((item, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #f1f5f3' }}>
-                    <td style={{ padding: '14px 18px', fontWeight: '700', color: '#1e293b' }}>{item.category}</td>
-                    <td style={{ padding: '14px 18px' }}>
+                    <td style={{ padding: '14px 18px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap' }}>{item.category}</td>
+                    <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: '11px', fontWeight: '700', color: item.currentDemand === 'High' ? '#15803d' : '#334155', backgroundColor: item.currentDemand === 'High' ? '#eaf7ee' : '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
                         {item.currentDemand}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 18px', color: '#15803d', fontWeight: '600' }}>{item.predictedTrend}</td>
-                    <td style={{ padding: '14px 18px', fontWeight: '700', color: '#0f172a' }}>{item.expectedBookingsToday}</td>
-                    <td style={{ padding: '14px 18px', color: '#64748b' }}>{item.peakHours}</td>
+                    <td style={{ padding: '14px 18px', color: '#15803d', fontWeight: '600', whiteSpace: 'nowrap' }}>{item.predictedTrend}</td>
+                    <td style={{ padding: '14px 18px', fontWeight: '700', color: '#0f172a', whiteSpace: 'nowrap' }}>{item.expectedBookingsToday}</td>
+                    <td style={{ padding: '14px 18px', color: '#64748b', whiteSpace: 'nowrap' }}>{item.peakHours}</td>
                   </tr>
                 ))}
               </tbody>
@@ -331,14 +332,14 @@ export default function AIInsightsPage() {
       {activeTab === 'heatmap' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>Predicted Demand (Next 24h)</h3>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-light)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+          <div className="table-responsive" style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-light)', overflowX: 'auto', boxShadow: 'var(--shadow-card)' }}>
+            <table style={{ width: '100%', minWidth: '500px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8faf9', borderBottom: '1px solid #e6ede8', color: '#55695e', fontSize: '12px', fontWeight: '700' }}>
-                  <th style={{ padding: '12px 18px' }}>Service Area / Category</th>
-                  <th style={{ padding: '12px 18px' }}>Forecast Level</th>
-                  <th style={{ padding: '12px 18px' }}>Recommended Techs</th>
-                  <th style={{ padding: '12px 18px' }}>Status</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Service Area / Category</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Forecast Level</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Recommended Techs</th>
+                  <th style={{ padding: '12px 18px', whiteSpace: 'nowrap' }}>Status</th>
                 </tr>
               </thead>
               <tbody>

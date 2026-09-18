@@ -17,7 +17,8 @@ import {
   Briefcase,
   Sparkles,
   Zap,
-  ChevronRight
+  ChevronRight,
+  ArrowLeft
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -41,6 +42,13 @@ export default function SupportPage() {
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [ticketDetailLoading, setTicketDetailLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 900);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Filters & Search
   const [statusTab, setStatusTab] = useState('ALL'); // ALL, ESCALATED, AGENT_ACTIVE, BOT_ACTIVE, RESOLVED
@@ -272,22 +280,23 @@ export default function SupportPage() {
 
       {/* Main Workspace (Two-Pane Layout) */}
       <div style={{ display: 'flex', gap: '18px', flex: 1, minHeight: 0, width: '100%' }}>
-        {/* LEFT COLUMN: Ticket Queue Sidebar (380px) */}
-        <div
-          style={{
-            width: '380px',
-            minWidth: '340px',
-            maxWidth: '400px',
-            flexShrink: 0,
-            backgroundColor: '#ffffff',
-            borderRadius: '14px',
-            border: '1px solid var(--border-light)',
-            boxShadow: 'var(--shadow-card)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
+        {/* LEFT COLUMN: Ticket Queue Sidebar */}
+        {(!isMobile || !selectedTicketId) && (
+          <div
+            style={{
+              width: isMobile ? '100%' : '380px',
+              minWidth: isMobile ? '0' : '340px',
+              maxWidth: isMobile ? '100%' : '400px',
+              flexShrink: 0,
+              backgroundColor: '#ffffff',
+              borderRadius: '14px',
+              border: '1px solid var(--border-light)',
+              boxShadow: 'var(--shadow-card)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
           {/* Search & Filters */}
           <div style={{ padding: '14px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {/* Search Input */}
@@ -525,79 +534,104 @@ export default function SupportPage() {
             )}
           </div>
         </div>
+        )}
 
         {/* RIGHT COLUMN: Interactive Live Chat & Takeover Console */}
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            backgroundColor: '#ffffff',
-            borderRadius: '14px',
-            border: '1px solid var(--border-light)',
-            boxShadow: 'var(--shadow-card)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-          {!selectedTicket ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-              <div
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '16px',
-                  backgroundColor: '#f1f5f9',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#94a3b8',
-                  marginBottom: '16px',
-                }}
-              >
-                <MessageSquare size={32} />
+        {(!isMobile || selectedTicketId) && (
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              backgroundColor: '#ffffff',
+              borderRadius: '14px',
+              border: '1px solid var(--border-light)',
+              boxShadow: 'var(--shadow-card)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              width: isMobile ? '100%' : 'auto',
+            }}
+          >
+            {!selectedTicket ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                <div
+                  style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '16px',
+                    backgroundColor: '#f1f5f9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#94a3b8',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <MessageSquare size={32} />
+                </div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#334155', margin: '0 0 6px 0' }}>
+                  Select a Support Conversation
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '380px', margin: 0, lineHeight: '1.5' }}>
+                  Pick any ticket from the left queue to view live AI interactions, take over the conversation, or send direct resolution messages.
+                </p>
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#334155', margin: '0 0 6px 0' }}>
-                Select a Support Conversation
-              </h3>
-              <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '380px', margin: 0, lineHeight: '1.5' }}>
-                Pick any ticket from the left queue to view live AI interactions, take over the conversation, or send direct resolution messages.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Console Header Bar */}
-              <div
-                style={{
-                  padding: '14px 20px',
-                  borderBottom: '1px solid #e2e8f0',
-                  backgroundColor: '#f8fafc',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                {/* User Information */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div
-                    style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '50%',
-                      backgroundColor: selectedTicket.userRole === 'worker' ? '#fef3c7' : '#dbeafe',
-                      color: selectedTicket.userRole === 'worker' ? '#b45309' : '#1e40af',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '16px',
-                      fontWeight: '700',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {selectedTicket.createdBy?.name?.[0] || 'U'}
-                  </div>
+            ) : (
+              <>
+                {/* Console Header Bar */}
+                <div
+                  style={{
+                    padding: isMobile ? '10px 14px' : '14px 20px',
+                    borderBottom: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                  }}
+                >
+                  {/* Mobile Back button */}
+                  {isMobile && (
+                    <button
+                      onClick={() => { setSelectedTicketId(null); setSelectedTicket(null); }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        backgroundColor: '#e2e8f0',
+                        border: 'none',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: '#334155',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <ArrowLeft size={14} /> Back to Queue
+                    </button>
+                  )}
+
+                  {/* User Information */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '50%',
+                        backgroundColor: selectedTicket.userRole === 'worker' ? '#fef3c7' : '#dbeafe',
+                        color: selectedTicket.userRole === 'worker' ? '#b45309' : '#1e40af',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '15px',
+                        fontWeight: '700',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {selectedTicket.createdBy?.name?.[0] || 'U'}
+                    </div>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: 0 }}>
@@ -979,6 +1013,7 @@ export default function SupportPage() {
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );

@@ -1,22 +1,13 @@
 import express from 'express';
-import { submitReview } from '../controllers/reviewController.js';
+import { submitReview, getBookingReview } from '../controllers/reviewController.js';
 import { protect } from '../middleware/authMiddleware.js';
-import upload from '../middleware/uploadMiddleware.js'; // Added Multer
+import upload from '../middleware/uploadMiddleware.js';
 
 const router = express.Router();
 
-// Upload up to 3 photos for review
-router.post('/:bookingId', protect, upload.array('workPhotos', 3), submitReview);
+// Single unified endpoint for review submission (supports up to 3 work photos via multipart or JSON)
+router.post('/:bookingId', protect, upload.any(), submitReview);
+router.post('/', protect, upload.any(), submitReview);
+router.get('/:bookingId', protect, getBookingReview);
 
 export default router;
-
-
-// import express from 'express';
-// import { submitReview } from '../controllers/reviewController.js';
-// import { protect } from '../middleware/authMiddleware.js';
-
-// const router = express.Router();
-
-// router.post('/:bookingId', protect, submitReview);
-
-// export default router;

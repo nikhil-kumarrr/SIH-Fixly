@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/theme_x.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -38,7 +39,12 @@ class _CustomerWorkStartedPageState extends State<CustomerWorkStartedPage> {
           previous.booking?.paymentStatus != current.booking?.paymentStatus,
       listener: (context, state) {
         if (state.step == BookingStatus.paid || state.booking?.paymentStatus == 'PAID') {
-          context.push(RouteNames.customerRating);
+          final id = state.booking?.id;
+          if (id != null && id.isNotEmpty) {
+            context.goRefreshing(RouteNames.customerRatingPath(id));
+          } else {
+            context.goRefreshing(RouteNames.customerRating);
+          }
         }
       },
       child: AppScaffold(
@@ -132,7 +138,14 @@ class _CustomerWorkStartedPageState extends State<CustomerWorkStartedPage> {
                   if (isPaid)
                     PrimaryButton(
                       label: 'Rate & Review Specialist',
-                      onPressed: () => context.push(RouteNames.customerRating),
+                      onPressed: () {
+                        final id = booking?.id;
+                        if (id != null && id.isNotEmpty) {
+                          context.goRefreshing(RouteNames.customerRatingPath(id));
+                        } else {
+                          context.goRefreshing(RouteNames.customerRating);
+                        }
+                      },
                     )
                   else if (isAwaitingPayment)
                     PrimaryButton(
@@ -142,10 +155,22 @@ class _CustomerWorkStartedPageState extends State<CustomerWorkStartedPage> {
                       ),
                     )
                   else
-                    PrimaryButton(
-                      label: 'Pay invoice',
-                      onPressed: () => context.push(
-                        '${RouteNames.customerPayment}?bookingId=${booking?.id ?? ''}&amount=${booking?.totalPrice ?? 0}',
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: const Text(
+                        'The service is currently in progress. You cannot make a payment while the worker is actively working. Please wait until the worker completes the service.',
+                        style: TextStyle(
+                          color: Color(0xFFB45309),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
                       ),
                     ),
                 ],

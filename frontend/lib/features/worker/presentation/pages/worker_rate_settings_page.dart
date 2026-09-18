@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../shared/presentation/cubit/profile_cubit.dart';
@@ -527,7 +529,7 @@ class _WorkerRateSettingsPageState extends State<WorkerRateSettingsPage> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    item.category,
+                    localizeCategory(item.category, context.l10n.locale),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

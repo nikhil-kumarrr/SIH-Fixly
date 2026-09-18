@@ -9,6 +9,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../core/network/api_config.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../shared/models/models.dart';
 import '../../../shared/presentation/widgets/service_scope_widgets.dart';
 import '../../../workers/data/workers_api_repository.dart';
@@ -37,8 +38,86 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
     _loadWorker();
   }
 
+  final List<WorkerReview> _extraReviews = [];
+  int _reviewsPage = 1;
+  bool _hasMoreReviews = false;
+  bool _loadingMoreReviews = false;
+  WorkerProfile? _profileForReviews;
+
   void _loadWorker() {
-    _future = WorkersApiRepository().fetchWorker(widget.workerId);
+    _extraReviews.clear();
+    _reviewsPage = 1;
+    _hasMoreReviews = false;
+    _loadingMoreReviews = false;
+    _profileForReviews = null;
+    _future = WorkersApiRepository().fetchWorker(widget.workerId).then((w) {
+      _hasMoreReviews = w.reviewCount > w.reviews.length;
+      _profileForReviews = w;
+      return w;
+    });
+  }
+
+  bool _canLoadMoreReviews(WorkerProfile worker) {
+    final displayCount = worker.reviews.length + _extraReviews.length;
+    final total = worker.reviewCount > 0 ? worker.reviewCount : displayCount;
+    return _hasMoreReviews || total > displayCount;
+  }
+
+  bool _onReviewsScroll(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification is! ScrollUpdateNotification &&
+        notification is! OverscrollNotification &&
+        notification is! ScrollEndNotification &&
+        notification is! ScrollMetricsNotification) {
+      return false;
+    }
+    final worker = _profileForReviews;
+    if (worker == null || _loadingMoreReviews || !_canLoadMoreReviews(worker)) {
+      return false;
+    }
+    // Near bottom (or content still short) → fetch next page.
+    if (notification.metrics.extentAfter < 320) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final w = _profileForReviews;
+        if (w == null || _loadingMoreReviews || !_canLoadMoreReviews(w)) return;
+        _loadMoreReviews(w);
+      });
+    }
+    return false;
+  }
+
+  Future<void> _loadMoreReviews(WorkerProfile worker) async {
+    if (_loadingMoreReviews || !_canLoadMoreReviews(worker)) return;
+    setState(() => _loadingMoreReviews = true);
+    try {
+      final nextPage = _reviewsPage + 1;
+      final res = await WorkersApiRepository().fetchWorkerReviews(
+        worker.id,
+        page: nextPage,
+        limit: 5,
+      );
+      if (!mounted) return;
+      setState(() {
+        _reviewsPage = nextPage;
+        final existingKeys = {
+          ...worker.reviews.map((r) => r.id ?? '${r.reviewerName}_${r.createdAt}'),
+          ..._extraReviews.map((r) => r.id ?? '${r.reviewerName}_${r.createdAt}'),
+        };
+        for (final r in res.reviews) {
+          final key = r.id ?? '${r.reviewerName}_${r.createdAt}';
+          if (!existingKeys.contains(key)) {
+            _extraReviews.add(r);
+            existingKeys.add(key);
+          }
+        }
+        _hasMoreReviews = res.hasMore;
+        _loadingMoreReviews = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingMoreReviews = false);
+    }
   }
 
   Future<void> _refresh() async {
@@ -450,9 +529,15 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
         }
 
         final worker = snap.data!;
-        final skillLabel = worker.skills.isEmpty
-            ? (worker.category ?? 'Skilled Specialist')
-            : worker.skills.join(' • ');
+        final locale = context.l10n.locale;
+        final localizedSkills = localizeCategoryList(worker.skills, locale);
+        final localizedCategory =
+            localizeCategory(worker.category, locale);
+        final skillLabel = localizedSkills.isEmpty
+            ? (localizedCategory.isNotEmpty
+                ? localizedCategory
+                : 'Skilled Specialist')
+            : localizedSkills.join(' • ');
         final aboutSkill = worker.skills.isEmpty
             ? (worker.category?.toLowerCase() ?? 'professional')
             : worker.skills.first.toLowerCase();
@@ -470,10 +555,12 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
           bottomNavigationBar: _buildStickyBookingBar(context, worker),
           body: AppRefreshIndicator(
             onRefresh: _refresh,
-            child: ListView(
-              physics: appRefreshScrollPhysics,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              children: [
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onReviewsScroll,
+              child: ListView(
+                physics: appRefreshScrollPhysics,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                children: [
                 // 1. Worker Hero Header Card with left-aligned avatar
                 _buildHeroCard(context, worker, skillLabel)
                     .animate()
@@ -537,6 +624,13 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                     .animate()
                     .fadeIn(delay: 240.ms),
 
+                if (worker.recentWorkPhotos.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _buildWorkPortfolioCard(context, worker)
+                      .animate()
+                      .fadeIn(delay: 250.ms),
+                ],
+
                 const SizedBox(height: 16),
 
                 // 5. Customer Reviews & Ratings
@@ -571,6 +665,7 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                   ),
                 ).animate().fadeIn(delay: 300.ms),
               ],
+            ),
             ),
           ),
         );
@@ -718,7 +813,7 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                   Text(
                     worker.title?.isNotEmpty == true
                         ? worker.title!
-                        : (worker.category ?? skillLabel),
+                        : skillLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -1042,6 +1137,7 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
     String aboutSkill,
   ) {
     final theme = Theme.of(context);
+    final locale = context.l10n.locale;
     final bioText = worker.bio?.isNotEmpty == true
         ? worker.bio!
         : worker.jobsCompleted > 0
@@ -1112,7 +1208,7 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        skill,
+                        localizeCategory(skill, locale),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1208,6 +1304,95 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
     );
   }
 
+  // --- Completed Work Portfolio Card ---
+  Widget _buildWorkPortfolioCard(BuildContext context, WorkerProfile worker) {
+    final theme = Theme.of(context);
+    final photos = worker.recentWorkPhotos;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.photo_library_outlined,
+                size: 20,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Recent Completed Work',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${photos.length} photos',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 96,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: photos.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (ctx, idx) {
+                final photo = photos[idx];
+                final fullUrl = photo.startsWith('http')
+                    ? photo
+                    : '${ApiConfig.baseUrl}${photo.startsWith('/') ? '' : '/'}$photo';
+                return GestureDetector(
+                  onTap: () => _showPhotoPreview(context, fullUrl),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 110,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Image.network(
+                        fullUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.broken_image_rounded, size: 28),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // --- 5. Customer Reviews Card ---
   Widget _buildReviewsCard(
     BuildContext context,
@@ -1215,6 +1400,12 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
     bool hasRatingHistory,
   ) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final itemBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final itemBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC);
+    final displayReviews = [...worker.reviews, ..._extraReviews];
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final canLoadMore = _canLoadMoreReviews(worker);
 
     return AppCard(
       child: Column(
@@ -1280,7 +1471,7 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                 ),
               ),
             )
-          else if (worker.reviews.isEmpty)
+          else if (displayReviews.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
@@ -1292,10 +1483,95 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                 ),
               ),
             )
-          else
-            ...worker.reviews.take(6).map(
-                  (review) => _ReviewItemTile(review: review),
-                ),
+          else ...[
+            for (var i = 0; i < displayReviews.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              Builder(
+                builder: (context) {
+                  final review = displayReviews[i];
+                  final reviewKey =
+                      review.id ?? '${review.reviewerName}_${review.createdAt}_$i';
+                  Widget tile = DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: itemBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: itemBorder),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: _ReviewItemTile(review: review),
+                    ),
+                  );
+                  if (!reduceMotion) {
+                    tile = tile
+                        .animate(key: ValueKey('review-$reviewKey'))
+                        .fadeIn(
+                          duration: 280.ms,
+                          delay: Duration(milliseconds: (i % 5) * 40),
+                          curve: Curves.easeOutCubic,
+                        )
+                        .slideY(
+                          begin: 0.05,
+                          end: 0,
+                          duration: 280.ms,
+                          delay: Duration(milliseconds: (i % 5) * 40),
+                          curve: Curves.easeOutCubic,
+                        );
+                  }
+                  return tile;
+                },
+              ),
+            ],
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              child: _loadingMoreReviews
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Loading more reviews…',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.hintColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                          .animate()
+                          .fadeIn(duration: 180.ms),
+                    )
+                  : canLoadMore
+                      ? const SizedBox(height: 8)
+                      : (_extraReviews.isNotEmpty || _reviewsPage > 1)
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Center(
+                                child: Text(
+                                  'You\'ve seen all reviews',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.hintColor,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+            ),
+          ],
         ],
       ),
     );
@@ -1364,69 +1640,225 @@ class _ReviewItemTile extends StatelessWidget {
         ? dateFormat.format(review.createdAt!)
         : null;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 12,
-                backgroundColor:
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                child: Text(
-                  review.reviewerName.isNotEmpty
-                      ? review.reviewerName[0].toUpperCase()
-                      : 'C',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
+    final avatarUrl = review.avatarUrl?.trim();
+    Widget avatarWidget;
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      final fullUrl = avatarUrl.startsWith('http')
+          ? avatarUrl
+          : '${ApiConfig.baseUrl}${avatarUrl.startsWith('/') ? '' : '/'}$avatarUrl';
+      avatarWidget = CircleAvatar(
+        radius: 14,
+        backgroundImage: NetworkImage(fullUrl),
+        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+        onBackgroundImageError: (_, __) {},
+        child: null,
+      );
+    } else {
+      avatarWidget = CircleAvatar(
+        radius: 14,
+        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+        child: Text(
+          review.reviewerName.isNotEmpty
+              ? review.reviewerName[0].toUpperCase()
+              : 'C',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            avatarWidget,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                review.reviewerName,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+            if (dateStr != null) ...[
+              Text(
+                dateStr,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      color: Theme.of(context).hintColor,
+                    ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  review.reviewerName,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-              if (dateStr != null) ...[
-                Text(
-                  dateStr,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontSize: 10,
-                        color: Theme.of(context).hintColor,
-                      ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              ...List.generate(
-                review.rating.round().clamp(1, 5),
-                (_) => const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
-              ),
             ],
+            ...List.generate(
+              review.rating.round().clamp(1, 5),
+              (_) => const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 38),
+          child: Text(
+            review.comment.isEmpty ? 'No comment provided.' : review.comment,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  height: 1.35,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
+                ),
           ),
-          const SizedBox(height: 5),
+        ),
+        if (review.bookingId != null && review.bookingId!.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
           Padding(
-            padding: const EdgeInsets.only(left: 32),
+            padding: const EdgeInsets.only(left: 38),
             child: Text(
-              review.comment.isEmpty ? 'No comment provided.' : review.comment,
+              review.bookingId!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    height: 1.35,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                    fontSize: 10,
+                    color: Theme.of(context).hintColor,
+                    fontWeight: FontWeight.w500,
                   ),
             ),
           ),
         ],
-      ),
+        if (review.badgesGiven.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 38),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: review.badgesGiven.map((badge) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    badge,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+        if (review.photos.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 38),
+            child: SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: review.photos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final photoUrl = review.photos[index];
+                  final fullUrl = photoUrl.startsWith('http')
+                      ? photoUrl
+                      : '${ApiConfig.baseUrl}${photoUrl.startsWith('/') ? '' : '/'}$photoUrl';
+                  return GestureDetector(
+                    onTap: () => _showPhotoPreview(context, fullUrl),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outline
+                                .withValues(alpha: 0.25),
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Image.network(
+                          fullUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.broken_image_rounded, size: 20),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
+
+void _showPhotoPreview(BuildContext context, String imageUrl) {
+  showDialog(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(16),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          InteractiveViewer(
+            panEnabled: true,
+            boundaryMargin: const EdgeInsets.all(20),
+            minScale: 0.5,
+            maxScale: 4.0,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text('Could not load image'),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 10,
+            right: 10,
+            child: CircleAvatar(
+              backgroundColor: Colors.black.withValues(alpha: 0.6),
+              radius: 18,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 
 String _percent(double? value) =>
     value == null ? '100%' : '${value.toStringAsFixed(0)}%';

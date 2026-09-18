@@ -2,6 +2,7 @@ import Service from '../models/Service.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
 import redis from '../config/redis.js';
 import { getRequestLanguage, localizeServices, localizeService } from '../utils/i18nHelper.js';
+import { invalidateHomeCache, syncServiceToRedis } from '../utils/homeCache.js';
 
 // 1. Create New Service / Category (Uses Multer + Cloudinary)
 export const createService = async (req, res) => {
@@ -30,55 +31,31 @@ export const createService = async (req, res) => {
             }
         }
 
+        const cleanCategory = (category || '').toString().toLowerCase().trim();
+        const cleanTitle = (title || '').toString().toLowerCase().trim();
+
         const newService = await Service.create({
-            title,
-            category: category.toLowerCase().trim(),
+            title: cleanTitle,
+            category: cleanCategory,
             image: imageUrl,
             basePrice: parseFloat(basePrice),
             estimatedTime: estimatedTime || '1 Hour',
             whatsIncluded: whatsIncludedArray
         });
 
-        // 24 Hours Cache Mechanism:
-        // Agar Redis me categories ka cache exist karta hai toh nayi category/service ko seedhe push karein
-        // Agar cache exist nahi karta ("nahi ho to"), toh poore cache key ko clear/hata dein taaki fresh load ho
-        const categoriesCacheKey = 'app:services:categories';
-        try {
-            const cachedData = await redis.get(categoriesCacheKey);
-            if (cachedData) {
-                const groupedCategories = JSON.parse(cachedData);
-                const catKey = newService.category;
+        // Direct Redis Push: Synchronize categories & services directly to Redis cache
+        await syncServiceToRedis(newService);
 
-                if (!groupedCategories[catKey]) {
-                    groupedCategories[catKey] = [];
-                }
-                const serviceObj = newService.toObject ? newService.toObject() : newService;
-                groupedCategories[catKey].push(serviceObj);
-
-                // Preserve remaining TTL, or default to 24 hours (86400 seconds)
-                const remainingTtl = await redis.ttl(categoriesCacheKey);
-                const ttl = remainingTtl > 0 ? remainingTtl : (parseInt(process.env.CACHE_TTL_CATEGORIES, 10) || 86400);
-
-                await redis.set(categoriesCacheKey, JSON.stringify(groupedCategories), 'EX', ttl);
-            } else {
-                // Agar cache exist nahi karta hai toh key ko clear/remove rakhein
-                await redis.del(categoriesCacheKey);
-            }
-        } catch (cacheErr) {
-            console.error('Redis cache update error in createService:', cacheErr.message);
-            try {
-                await redis.del(categoriesCacheKey);
-            } catch (_) {}
+        // Realtime Socket Broadcast
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('category:created', { category: newService.category, service: newService });
+            io.emit('services:updated', { action: 'created', service: newService });
         }
-
-        // Invalidate dashboard cache
-        try {
-            await redis.del('app:home:dashboard');
-        } catch (_) {}
 
         return res.status(201).json({
             success: true,
-            message: 'Service/Category created successfully',
+            message: 'Service/Category created successfully and pushed to Redis cache',
             service: newService
         });
     } catch (error) {
@@ -101,7 +78,7 @@ export const searchServices = async (req, res) => {
                 { title: { $regex: query, $options: 'i' } },
                 { category: { $regex: query, $options: 'i' } }
             ]
-        }).lean();
+        }).sort({ createdAt: 1, _id: 1 }).lean();
 
         const services = await localizeServices(rawServices, lang);
 
@@ -122,6 +99,9 @@ export const getCategories = async (req, res) => {
         // Redis cache check
         try {
             cachedData = await redis.get(cacheKey);
+            if (!cachedData && (lang === 'en' || !lang)) {
+                cachedData = await redis.get('app:services:categories');
+            }
         } catch (redisErr) {
             console.warn('Redis GET error for categories:', redisErr.message);
         }
@@ -134,11 +114,11 @@ export const getCategories = async (req, res) => {
             });
         }
 
-        // Cache miss: Hit DB directly one time
-        const rawServices = await Service.find({ isActive: true }).lean();
+        // Cache miss: Hit DB directly one time sorted by creation order (stable sequence)
+        const rawServices = await Service.find({ isActive: true }).sort({ createdAt: 1, _id: 1 }).lean();
         const services = await localizeServices(rawServices, lang);
         const groupedCategories = services.reduce((acc, service) => {
-            const catKey = service.category;
+            const catKey = (service.category || 'general').toString().toLowerCase().trim();
             acc[catKey] = acc[catKey] || [];
             acc[catKey].push(service);
             return acc;

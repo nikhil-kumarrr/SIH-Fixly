@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../cubit/booking_flow_cubit.dart';
@@ -40,7 +41,12 @@ class _CustomerWorkerArrivedPageState extends State<CustomerWorkerArrivedPage> {
             state.step == BookingStatus.inProgress) {
           context.pushReplacement(RouteNames.customerWorkStarted);
         } else if (state.step == BookingStatus.paid || state.booking?.paymentStatus == 'PAID') {
-          context.push(RouteNames.customerRating);
+          final id = state.booking?.id;
+          if (id != null && id.isNotEmpty) {
+            context.goRefreshing(RouteNames.customerRatingPath(id));
+          } else {
+            context.goRefreshing(RouteNames.customerRating);
+          }
         }
       },
       child: AppScaffold(
@@ -211,7 +217,14 @@ class _CustomerWorkerArrivedPageState extends State<CustomerWorkerArrivedPage> {
                   if (isPaid) ...[
                     PrimaryButton(
                       label: 'Rate & Review Specialist',
-                      onPressed: () => context.push(RouteNames.customerRating),
+                      onPressed: () {
+                        final id = booking?.id;
+                        if (id != null && id.isNotEmpty) {
+                          context.goRefreshing(RouteNames.customerRatingPath(id));
+                        } else {
+                          context.goRefreshing(RouteNames.customerRating);
+                        }
+                      },
                     ),
                   ] else if (isAwaitingPayment) ...[
                     PrimaryButton(

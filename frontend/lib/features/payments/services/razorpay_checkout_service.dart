@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
+import '../../../core/network/api_exception.dart';
 import '../data/payments_api_repository.dart';
 
 class RazorpayCheckoutResult {
@@ -18,6 +19,27 @@ class RazorpayCheckoutResult {
 
 class RazorpayCheckoutService {
   Razorpay? _razorpay;
+
+  /// Razorpay cancel / fail often returns "undefined" / empty — never show that.
+  static String _friendlyFailure(PaymentFailureResponse response) {
+    final fromError = response.error?['description']?.toString() ??
+        response.error?['reason']?.toString() ??
+        '';
+    final raw = (response.message ?? fromError).trim();
+    final code = response.code;
+    final lower = raw.toLowerCase();
+    // code 2 = PAYMENT_CANCELLED in razorpay_flutter
+    if (raw.isEmpty ||
+        code == 2 ||
+        lower == 'undefined' ||
+        lower == 'null' ||
+        lower.contains('unidentified') ||
+        lower.contains('payment_cancelled') ||
+        lower.contains('payment cancelled')) {
+      return 'Payment failed';
+    }
+    return ApiException.userFacingMessage(raw);
+  }
 
   Future<RazorpayCheckoutResult> openCheckout({
     required PaymentOrder order,
@@ -40,7 +62,7 @@ class RazorpayCheckoutService {
       final paymentId = response.paymentId;
       final signature = response.signature;
       if (orderId == null || paymentId == null || signature == null) {
-        completeError(Exception('Incomplete Razorpay success payload'));
+        completeError(ApiException('Payment failed'));
         return;
       }
       if (!completer.isCompleted) {
@@ -56,8 +78,7 @@ class RazorpayCheckoutService {
     });
 
     _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
-      final message = response.message ?? 'Payment cancelled';
-      completeError(Exception(message));
+      completeError(ApiException(_friendlyFailure(response)));
     });
 
     _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});

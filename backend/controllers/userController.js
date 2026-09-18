@@ -72,7 +72,23 @@ export const updateMyProfile = async (req, res) => {
         const isWorkerRole = user.role === 'worker';
 
         if (savedAddresses !== undefined && Array.isArray(savedAddresses)) {
-            user.savedAddresses = savedAddresses;
+            const prev = Array.isArray(user.savedAddresses) && user.savedAddresses[0]
+                ? user.savedAddresses[0]
+                : {};
+            const prevLoc = prev.location?.coordinates?.length === 2
+                ? prev.location
+                : { type: 'Point', coordinates: [0, 0] };
+            user.savedAddresses = savedAddresses.map((addr, idx) => {
+                const a = addr && typeof addr === 'object' ? addr : {};
+                const loc = a.location?.coordinates?.length === 2 ? a.location : (idx === 0 ? prevLoc : { type: 'Point', coordinates: [0, 0] });
+                return {
+                    label: a.label || (idx === 0 ? (prev.label || 'Home') : 'Address'),
+                    addressLine: a.addressLine !== undefined ? String(a.addressLine).trim() : (prev.addressLine || ''),
+                    city: a.city !== undefined ? String(a.city).trim() : (prev.city || ''),
+                    pincode: a.pincode !== undefined ? String(a.pincode).trim() : (prev.pincode || ''),
+                    location: loc,
+                };
+            });
         } else if (!isWorkerRole && workAddress !== undefined) {
             const line = String(workAddress).trim();
             const prev = Array.isArray(user.savedAddresses) && user.savedAddresses[0]
@@ -118,6 +134,12 @@ export const updateMyProfile = async (req, res) => {
             if (dateOfBirth !== undefined) user.workerProfile.dateOfBirth = dateOfBirth;
             if (upiId !== undefined) {
                 user.workerProfile.upi = { upiId: String(upiId).trim() };
+            }
+            if (req.body.state !== undefined) {
+                user.workerProfile.state = String(req.body.state).trim();
+            }
+            if (req.body.district !== undefined) {
+                user.workerProfile.district = String(req.body.district).trim();
             }
         }
 

@@ -1,5 +1,5 @@
 /**
- * Shared app locales for Flexi AI (must match frontend LocaleScope).
+ * Shared app locales for Fixly AI (must match frontend LocaleScope).
  */
 export const APP_AI_LOCALES = ['en', 'hi', 'ta', 'te', 'kn', 'bn', 'mr', 'gu', 'pa'];
 

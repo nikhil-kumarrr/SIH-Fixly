@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Booking from '../models/Booking.js';
 import Review from '../models/Review.js';
@@ -10,6 +11,31 @@ import { uploadDataUriOrUrl } from '../utils/cloudinary.js';
 import { updateUserProfile } from './authController.js';
 import { getPlatformSettings } from '../services/settingsService.js';
 import { buildCategoryCondition } from '../utils/workerCategoryFilter.js';
+import { getRequestLanguage, localizeCategory, localizeCategories } from '../utils/i18nHelper.js';
+
+/** Attach display-localized category/skills for the request language (cache stays raw). */
+const withLocalizedWorkerTrade = (worker, lang) => {
+    if (!worker) return worker;
+    const clone = { ...worker };
+    const profile = clone.workerProfile ? { ...clone.workerProfile } : null;
+    const rawCategory = profile?.category || clone.category || '';
+    const rawCategories = Array.isArray(profile?.categories) && profile.categories.length
+        ? profile.categories
+        : (rawCategory ? [rawCategory] : []);
+    const rawSkills = Array.isArray(profile?.skills) ? profile.skills : (clone.skills || []);
+
+    clone.category = localizeCategory(rawCategory, lang);
+    clone.categories = localizeCategories(rawCategories, lang);
+    clone.skills = localizeCategories(rawSkills, lang);
+    clone.displayCategory = clone.category;
+    if (profile) {
+        profile.category = clone.category;
+        profile.categories = clone.categories;
+        profile.skills = clone.skills;
+        clone.workerProfile = profile;
+    }
+    return clone;
+};
 
 // Haversine formula to calculate accurate distance between two coordinates in kilometers
 const calculateHaversineDistanceKm = (lat1, lon1, lat2, lon2) => {
@@ -162,6 +188,10 @@ export const getNearbyWorkers = async (req, res) => {
                     ? (profile.category.toLowerCase().includes('plumb') ? 'Master Plumber' : `${profile.category} Specialist`)
                     : 'Certified Professional';
 
+                const rawCategory = profile.category || category || 'General';
+                const rawSkills = profile.skills || [];
+                const lang = getRequestLanguage(req);
+
                 nearbyWorkers.push({
                     _id: worker._id,
                     name: worker.name,
@@ -169,16 +199,22 @@ export const getNearbyWorkers = async (req, res) => {
                     email: worker.email,
                     avatar: worker.avatar || profile.selfieImageUrl || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&auto=format&fit=crop&q=80',
                     rating,
-                    category: profile.category || category || 'General',
-                    title: profile.bio ? categoryTitle : (profile.category || 'Specialist'),
-                    skills: profile.skills || [],
+                    category: localizeCategory(rawCategory, lang),
+                    categories: localizeCategories(
+                        Array.isArray(profile.categories) && profile.categories.length
+                            ? profile.categories
+                            : [rawCategory],
+                        lang
+                    ),
+                    title: profile.bio ? categoryTitle : localizeCategory(rawCategory, lang),
+                    skills: localizeCategories(rawSkills, lang),
                     totalJobs,
                     rate: workerRate, // Database schema rate
                     minimumCharge: workerRate, // Minimum charge shown on frontend
                     rateFormatted: `₹${workerRate}`, // Indian currency without per hour
                     distanceKm: roundedDistance,
                     distanceFormatted: `${roundedDistance} km`,
-                    distanceDisplay: `${roundedDistance}m`,
+                    distanceDisplay: `${roundedDistance} km`,
                     isOnline: profile.isOnline !== false,
                     isAvailable: true, // Guaranteed available since busy workers are excluded
                     location: worker.location || { type: 'Point', coordinates: [workerLng, workerLat] },
@@ -272,11 +308,30 @@ export const getNearbyWorkers = async (req, res) => {
 export const getWorkerProfile = async (req, res) => {
     try {
         const { workerId } = req.params;
+        const lang = getRequestLanguage(req);
         const cacheKey = `worker:profile:${workerId}`;
 
         const cachedProfile = await redis.get(cacheKey);
         if (cachedProfile) {
-            return res.status(200).json({ success: true, source: 'cache', worker: JSON.parse(cachedProfile) });
+            const worker = JSON.parse(cachedProfile);
+            // Live availability still refreshed below for cache hits.
+            const activeBooking = await Booking.findOne({
+                worker: workerId,
+                status: { $in: ['APPROVED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
+            });
+            const isAvailable = !activeBooking;
+            const isBusy = !!activeBooking;
+            worker.isAvailable = isAvailable;
+            worker.isBusy = isBusy;
+            if (worker.workerProfile) {
+                worker.workerProfile.isAvailable = isAvailable;
+                worker.workerProfile.isBusy = isBusy;
+            }
+            return res.status(200).json({
+                success: true,
+                source: 'cache',
+                worker: withLocalizedWorkerTrade(worker, lang),
+            });
         }
 
         const ttl = parseInt(process.env.CACHE_TTL_WORKER_PROFILE, 10) || 600;
@@ -289,15 +344,25 @@ export const getWorkerProfile = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Worker profile not found.' });
         }
 
-        const [completed, cancelled, reviews] = await Promise.all([
+        const workerObjId = mongoose.Types.ObjectId.isValid(workerId)
+            ? new mongoose.Types.ObjectId(workerId)
+            : workerId;
+
+        const [completed, cancelled, reviews, recentReviewsRaw] = await Promise.all([
             Booking.countDocuments({ worker: workerId, status: 'COMPLETED' }),
             Booking.countDocuments({ worker: workerId, status: 'CANCELLED' }),
-            Review.find({ worker: workerId }).select('rating'),
+            Review.find({ worker: workerObjId, reviewerRole: { $ne: 'worker' } }).select('rating').lean(),
+            Review.find({ worker: workerObjId, reviewerRole: { $ne: 'worker' } })
+                .populate('customer', 'name avatar')
+                .populate('booking', 'bookingId workPhotos completionPhotos')
+                .sort({ createdAt: -1 })
+                .limit(5)
+                .lean()
         ]);
         const total = completed + cancelled;
         const completionRate = total === 0 ? 0 : Math.round((completed / total) * 100);
         const avgRating = reviews.length
-            ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+            ? reviews.reduce((s, r) => s + (r.rating || 5), 0) / reviews.length
             : 0;
         worker.reliability = {
             score: Math.round(
@@ -312,6 +377,92 @@ export const getWorkerProfile = async (req, res) => {
             completedJobs: completed,
         };
 
+        // Format recent 5 customer reviews with work photos and customer details
+        const bookingIds = recentReviewsRaw.map(r => r.booking?._id || r.booking).filter(Boolean);
+        const partnerReviews = bookingIds.length > 0 ? await Review.find({
+            booking: { $in: bookingIds },
+            reviewerRole: 'worker',
+            photos: { $exists: true, $not: { $size: 0 } }
+        }).select('booking photos').lean() : [];
+
+        const partnerPhotosByBooking = {};
+        for (const pr of partnerReviews) {
+            partnerPhotosByBooking[String(pr.booking)] = pr.photos;
+        }
+
+        const formattedRecentReviews = recentReviewsRaw.map(r => {
+            const bIdStr = String(r.booking?._id || r.booking || '');
+            let workPhotos = Array.isArray(r.photos) && r.photos.length > 0 ? r.photos : [];
+            if (workPhotos.length === 0) {
+                if (partnerPhotosByBooking[bIdStr]?.length) {
+                    workPhotos = partnerPhotosByBooking[bIdStr];
+                } else if (r.booking?.workPhotos?.length) {
+                    workPhotos = r.booking.workPhotos;
+                } else if (r.booking?.completionPhotos?.length) {
+                    workPhotos = r.booking.completionPhotos;
+                }
+            }
+            const customerName = r.customer?.name || 'Customer';
+            const customerAvatar = r.customer?.avatar || null;
+            return {
+                _id: r._id,
+                id: r._id,
+                bookingId: r.booking?.bookingId || (typeof r.booking === 'string' ? r.booking : null),
+                reviewerName: customerName,
+                customerName,
+                avatar: customerAvatar,
+                avatarUrl: customerAvatar,
+                rating: Number(r.rating) || 5,
+                comment: r.feedback || '',
+                feedback: r.feedback || '',
+                description: r.feedback || '',
+                badgesGiven: r.badgesGiven || [],
+                photos: workPhotos.slice(0, 3),
+                workPhotos: workPhotos.slice(0, 3),
+                createdAt: r.createdAt
+            };
+        });
+
+        worker.reviews = formattedRecentReviews;
+        worker.recentReviews = formattedRecentReviews;
+        worker.reviewCount = reviews.length;
+        worker.totalReviews = reviews.length;
+
+        // Ensure recentWorkPhotos is populated
+        if (!worker.workerProfile.recentWorkPhotos || worker.workerProfile.recentWorkPhotos.length === 0) {
+            const reviewsWithPhotos = await Review.find({
+                worker: workerObjId,
+                photos: { $exists: true, $not: { $size: 0 } }
+            }).sort({ createdAt: -1 }).limit(10).lean();
+
+            const collectedPhotos = [];
+            for (const rwp of reviewsWithPhotos) {
+                if (Array.isArray(rwp.photos)) {
+                    for (const p of rwp.photos) {
+                        if (p && !collectedPhotos.includes(p)) collectedPhotos.push(p);
+                    }
+                }
+            }
+            worker.workerProfile.recentWorkPhotos = collectedPhotos.slice(0, 15);
+        }
+        worker.recentWorkPhotos = worker.workerProfile.recentWorkPhotos || [];
+
+        if (worker.workerProfile) {
+            const settings = await getPlatformSettings();
+            const platformRadius = Number(settings.workerSearchRadiusKm) || 15;
+            if (!worker.workerProfile.serviceRadiusKm) {
+                worker.workerProfile.serviceRadiusKm = platformRadius;
+            }
+            const workerRate = worker.workerProfile.rate ?? worker.workerProfile.hourlyRate ?? 0;
+            worker.workerProfile.rate = workerRate;
+            worker.workerProfile.hourlyRate = workerRate;
+            worker.workerProfile.minimumCharge = workerRate;
+            worker.workerProfile.rateFormatted = `₹${workerRate}`;
+            worker.workerProfile.reviews = formattedRecentReviews;
+            worker.workerProfile.reviewCount = reviews.length;
+            worker.workerProfile.totalReviews = reviews.length;
+        }
+
         await redis.set(cacheKey, JSON.stringify(worker), 'EX', ttl);
 
         // Check real-time active booking status (never stale, bypasses cache)
@@ -325,15 +476,16 @@ export const getWorkerProfile = async (req, res) => {
         worker.isAvailable = isAvailable;
         worker.isBusy = isBusy;
         if (worker.workerProfile) {
-            const workerRate = worker.workerProfile.rate ?? worker.workerProfile.hourlyRate ?? 0;
-            worker.workerProfile.rate = workerRate;
-            worker.workerProfile.minimumCharge = workerRate;
-            worker.workerProfile.rateFormatted = `₹${workerRate}`;
             worker.workerProfile.isAvailable = isAvailable;
             worker.workerProfile.isBusy = isBusy;
         }
 
-        return res.status(200).json({ success: true, source: 'db', worker });
+        return res.status(200).json({
+            success: true,
+            source: 'db',
+            worker: withLocalizedWorkerTrade(worker, lang),
+        });
+
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
@@ -462,14 +614,7 @@ export const getWorkerReliability = async (req, res) => {
 
 export const getCategoryWageFloor = (category, floor) => {
     if (!floor) return 300;
-    const cat = (category || '').toLowerCase();
-    if (cat.includes('plumb')) return floor.plumbing || floor.default || 350;
-    if (cat.includes('electr')) return floor.electrical || floor.default || 400;
-    if (cat.includes('carpent')) return floor.carpentry || floor.default || 400;
-    if (cat.includes('clean')) return floor.cleaning || floor.default || 250;
-    if (cat.includes('paint')) return floor.painting || floor.default || 350;
-    if (cat.includes('appliance') || cat.includes('ac') || cat.includes('repair')) return floor.appliance || floor.default || 350;
-    if (cat.includes('garden')) return floor.gardening || floor.default || 250;
+    const cat = (category || '').toString().toLowerCase().trim();
     return floor[cat] || floor.default || 300;
 };
 

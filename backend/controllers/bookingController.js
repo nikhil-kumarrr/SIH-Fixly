@@ -11,6 +11,32 @@ import { findEligibleWorkerIds } from '../services/eligibleWorkers.js';
 import { getPlatformSettings } from '../services/settingsService.js';
 import { scheduleReminders } from '../queues/scheduledBookingQueue.js';
 import { validateAndCalculateCoupon } from '../services/couponService.js';
+import Review from '../models/Review.js';
+
+/** Hydrate isReviewed / workerReviewed from Review docs (fixes legacy single-flag data). */
+async function attachReviewFlags(bookings) {
+    const list = Array.isArray(bookings) ? bookings.filter(Boolean) : [];
+    if (list.length === 0) return bookings;
+    const ids = list.map((b) => b._id).filter(Boolean);
+    if (ids.length === 0) return bookings;
+    const reviews = await Review.find({ booking: { $in: ids } })
+        .select('booking reviewerRole')
+        .lean();
+    const byBooking = {};
+    for (const r of reviews) {
+        const key = String(r.booking);
+        if (!byBooking[key]) byBooking[key] = { customer: false, worker: false };
+        if (r.reviewerRole === 'worker') byBooking[key].worker = true;
+        else byBooking[key].customer = true;
+    }
+    for (const b of list) {
+        const flags = byBooking[String(b._id)];
+        if (!flags) continue;
+        if (flags.customer) b.isReviewed = true;
+        if (flags.worker) b.workerReviewed = true;
+    }
+    return bookings;
+}
 
 // Real-time Coupon Code Verification for Customer Checkout
 export const validateCoupon = async (req, res) => {
@@ -32,7 +58,8 @@ export const validateCoupon = async (req, res) => {
             couponCode,
             baseAmount: Number(amount) || 0,
             serviceCategory: resolvedCategory,
-            userRole: req.user?.role || 'customer'
+            userRole: req.user?.role || 'customer',
+            userId: req.user?.id || req.user?._id,
         });
 
         if (!result.isValid) {
@@ -43,6 +70,185 @@ export const validateCoupon = async (req, res) => {
             success: true,
             message: `Coupon '${result.couponCode}' applied successfully!`,
             data: result
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/** Apply or remove coupon on an existing booking invoice (billing / payment screen). */
+export const applyCouponToBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { couponCode, remove } = req.body || {};
+        const wantsRemove =
+            remove === true ||
+            remove === 'true' ||
+            couponCode === null ||
+            (typeof couponCode === 'string' && !couponCode.trim());
+
+        const booking = await Booking.findById(bookingId).populate('service', 'category name');
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+
+        const customerId = String(booking.customer);
+        const requesterId = String(req.user?.id || req.user?._id);
+        if (customerId !== requesterId && req.user?.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Not allowed' });
+        }
+
+        if (booking.invoice?.paymentStatus === 'PAID') {
+            return res.status(400).json({
+                success: false,
+                message: wantsRemove
+                    ? 'Cannot remove coupon after payment'
+                    : 'Cannot apply coupon after payment',
+            });
+        }
+
+        const inv = booking.invoice || {};
+        const base = Number(inv.baseServiceFee) || 0;
+        const parts = Number(inv.extraPartsTotal) || 0;
+        const platform = Number(inv.platformFee) || 0;
+        const urgent = Number(inv.urgentFee) || 0;
+        // Recompute subtotal before coupon (strip any prior coupon)
+        const subtotal = base + parts + platform + urgent;
+
+        if (wantsRemove) {
+            booking.invoice = {
+                ...(inv.toObject?.() || inv),
+                baseServiceFee: base,
+                extraPartsTotal: parts,
+                platformFee: platform,
+                urgentFee: urgent,
+                couponCode: null,
+                couponDiscount: 0,
+                totalAmount: subtotal,
+                paymentStatus: inv.paymentStatus || 'PENDING',
+                paymentMethod: inv.paymentMethod || 'UPI',
+            };
+            await booking.save();
+
+            const populated = await Booking.findById(booking._id)
+                .populate('service', 'name category icon basePrice')
+                .populate('customer', 'name phone')
+                .populate('worker', 'name phone workerProfile')
+                .lean();
+
+            return res.status(200).json({
+                success: true,
+                message: 'Coupon removed',
+                booking: populated,
+            });
+        }
+
+        if (!couponCode) {
+            return res.status(400).json({ success: false, message: 'couponCode is required' });
+        }
+
+        const category = booking.service?.category || null;
+        const previousCode = inv.couponCode
+            ? String(inv.couponCode).toUpperCase().trim()
+            : null;
+        const sameCode =
+            previousCode &&
+            previousCode === String(couponCode).toUpperCase().trim();
+
+        const result = await validateAndCalculateCoupon({
+            couponCode,
+            baseAmount: subtotal,
+            serviceCategory: category,
+            userRole: req.user?.role || 'customer',
+            userId: requesterId,
+            skipUsedCheck: !!sameCode,
+        });
+
+        if (!result.isValid) {
+            return res.status(400).json({ success: false, message: result.message });
+        }
+
+        booking.invoice = {
+            ...inv.toObject?.() || inv,
+            baseServiceFee: base,
+            extraPartsTotal: parts,
+            platformFee: platform,
+            urgentFee: urgent,
+            couponCode: result.couponCode,
+            couponDiscount: result.discountAmount,
+            totalAmount: result.finalAmount,
+            paymentStatus: inv.paymentStatus || 'PENDING',
+            paymentMethod: inv.paymentMethod || 'UPI',
+        };
+        await booking.save();
+
+        // Coupon stays reserved on invoice only — burn after successful payment.
+        const populated = await Booking.findById(booking._id)
+            .populate('service', 'name category icon basePrice')
+            .populate('customer', 'name phone')
+            .populate('worker', 'name phone workerProfile')
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            message: `Coupon '${result.couponCode}' applied. Saved ₹${result.discountAmount}`,
+            data: result,
+            booking: populated,
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const removeCouponFromBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+
+        const customerId = String(booking.customer);
+        const requesterId = String(req.user?.id || req.user?._id);
+        if (customerId !== requesterId && req.user?.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Not allowed' });
+        }
+
+        if (booking.invoice?.paymentStatus === 'PAID') {
+            return res.status(400).json({ success: false, message: 'Cannot remove coupon after payment' });
+        }
+
+        const inv = booking.invoice || {};
+        const base = Number(inv.baseServiceFee) || 0;
+        const parts = Number(inv.extraPartsTotal) || 0;
+        const platform = Number(inv.platformFee) || 0;
+        const urgent = Number(inv.urgentFee) || 0;
+        const subtotal = base + parts + platform + urgent;
+
+        booking.invoice = {
+            ...(inv.toObject?.() || inv),
+            baseServiceFee: base,
+            extraPartsTotal: parts,
+            platformFee: platform,
+            urgentFee: urgent,
+            couponCode: null,
+            couponDiscount: 0,
+            totalAmount: subtotal,
+            paymentStatus: inv.paymentStatus || 'PENDING',
+            paymentMethod: inv.paymentMethod || 'UPI',
+        };
+        await booking.save();
+
+        const populated = await Booking.findById(booking._id)
+            .populate('service', 'name category icon basePrice')
+            .populate('customer', 'name phone')
+            .populate('worker', 'name phone workerProfile')
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Coupon removed',
+            booking: populated,
         });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -70,14 +276,8 @@ export const calculateEstimate = async (req, res) => {
         
         let floor = federation.minimumWageFloor?.default || 300;
         if (service && service.category) {
-            const cat = service.category.toLowerCase();
-            if (cat.includes('plumb')) floor = federation.minimumWageFloor?.plumbing || floor;
-            else if (cat.includes('electr')) floor = federation.minimumWageFloor?.electrical || floor;
-            else if (cat.includes('carpent')) floor = federation.minimumWageFloor?.carpentry || floor;
-            else if (cat.includes('clean')) floor = federation.minimumWageFloor?.cleaning || floor;
-            else if (cat.includes('paint')) floor = federation.minimumWageFloor?.painting || floor;
-            else if (cat.includes('appliance')) floor = federation.minimumWageFloor?.appliance || floor;
-            else if (cat.includes('garden')) floor = federation.minimumWageFloor?.gardening || floor;
+            const cat = service.category.toLowerCase().trim();
+            floor = federation.minimumWageFloor?.[cat] || federation.minimumWageFloor?.default || floor;
         }
         
         let basePrice = service ? service.basePrice : defaultLaborRate;
@@ -100,7 +300,8 @@ export const calculateEstimate = async (req, res) => {
                 couponCode,
                 baseAmount: laborMin,
                 serviceCategory: service?.category,
-                userRole: req.user?.role || 'customer'
+                userRole: req.user?.role || 'customer',
+                userId: req.user?.id || req.user?._id,
             });
             if (couponRes.isValid) {
                 couponDiscount = couponRes.discountAmount;
@@ -236,14 +437,8 @@ export const createBooking = async (req, res) => {
 
         let floor = federation.minimumWageFloor?.default || 300;
         if (service && service.category) {
-            const cat = service.category.toLowerCase();
-            if (cat.includes('plumb')) floor = federation.minimumWageFloor?.plumbing || floor;
-            else if (cat.includes('electr')) floor = federation.minimumWageFloor?.electrical || floor;
-            else if (cat.includes('carpent')) floor = federation.minimumWageFloor?.carpentry || floor;
-            else if (cat.includes('clean')) floor = federation.minimumWageFloor?.cleaning || floor;
-            else if (cat.includes('paint')) floor = federation.minimumWageFloor?.painting || floor;
-            else if (cat.includes('appliance')) floor = federation.minimumWageFloor?.appliance || floor;
-            else if (cat.includes('garden')) floor = federation.minimumWageFloor?.gardening || floor;
+            const cat = service.category.toLowerCase().trim();
+            floor = federation.minimumWageFloor?.[cat] || federation.minimumWageFloor?.default || floor;
         }
         if (baseFee < floor) baseFee = floor;
 
@@ -290,11 +485,13 @@ export const createBooking = async (req, res) => {
                 couponCode,
                 baseAmount: baseFee,
                 serviceCategory: service?.category,
-                userRole: req.user?.role || 'customer'
+                userRole: req.user?.role || 'customer',
+                userId: req.user?.id || req.user?._id,
             });
             if (couponRes.isValid) {
                 couponDiscount = couponRes.discountAmount;
                 appliedCouponCode = couponRes.couponCode;
+                // Burn only after successful payment (verifyPayment).
             }
         }
 
@@ -418,14 +615,15 @@ export const getBookingDetails = async (req, res) => {
 
         const booking = await Booking.findById(bookingId)
             .populate('service')
-            .populate('worker', 'name phone avatar rating')
-            .populate('customer', 'name phone')
+            .populate('worker', 'name phone avatar workerProfile')
+            .populate('customer', 'name phone avatar')
             .lean();
 
         if (!booking) {
             return res.status(404).json({ success: false, message: 'Booking not found' });
         }
 
+        await attachReviewFlags([booking]);
         return res.status(200).json({ success: true, booking });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -481,11 +679,21 @@ export const updateBooking = async (req, res) => {
             }
         }
 
-        // Editing reopens the request so available workers can receive it again.
-        booking.status = 'PENDING';
-        booking.worker = null;
-        booking.declinedBy = null;
-        booking.declineReason = null;
+        // Description-only edits must NOT unassign worker / reopen pool.
+        // Only rebroadcast when an unassigned open booking changes time/address.
+        const descriptionOnly =
+            problemDescription !== undefined &&
+            scheduledTime === undefined &&
+            serviceAddress === undefined;
+        const isOpenUnassigned =
+            ['PENDING', 'SEARCHING'].includes(booking.status) && !booking.worker;
+        const shouldRebroadcast = !descriptionOnly && isOpenUnassigned;
+
+        if (shouldRebroadcast) {
+            booking.status = 'PENDING';
+            booking.declinedBy = null;
+            booking.declineReason = null;
+        }
         await booking.save();
 
         const populatedBooking = await Booking.findById(booking._id)
@@ -495,21 +703,46 @@ export const updateBooking = async (req, res) => {
             .lean();
         const service = populatedBooking?.service;
         const category = service?.category;
+        const assignedWorkerId = populatedBooking?.worker
+            ? String(populatedBooking.worker._id || populatedBooking.worker)
+            : null;
 
         const io = req.app.get('io');
         if (io) {
             io.emit('booking:updated', { bookingId: booking._id, booking: populatedBooking });
+            if (assignedWorkerId) {
+                io.to(`worker_${assignedWorkerId}`).emit('booking:updated', {
+                    bookingId: booking._id,
+                    booking: populatedBooking,
+                });
+                io.to(`user_${assignedWorkerId}`).emit('booking:updated', {
+                    bookingId: booking._id,
+                    booking: populatedBooking,
+                });
+            }
         }
-        safeNotify(async () => {
-            if (!category) return;
-            const workerIds = await findEligibleWorkerIds(booking, category);
-            await notifyUsers(workerIds, {
-                eventType: 'NEW_BOOKING_AVAILABLE',
-                entityId: booking._id,
-                bookingId: booking._id,
-                dedupeKeyFor: (id) => `NEW_BOOKING_AVAILABLE:${booking._id}:${id}`,
+        if (shouldRebroadcast) {
+            safeNotify(async () => {
+                if (!category) return;
+                const workerIds = await findEligibleWorkerIds(booking, category);
+                await notifyUsers(workerIds, {
+                    eventType: 'NEW_BOOKING_AVAILABLE',
+                    entityId: booking._id,
+                    bookingId: booking._id,
+                    dedupeKeyFor: (id) => `NEW_BOOKING_AVAILABLE:${booking._id}:${id}`,
+                });
             });
-        });
+        } else if (assignedWorkerId) {
+            safeNotify(async () => {
+                await notifyUser({
+                    recipient: assignedWorkerId,
+                    eventType: 'BOOKING_UPDATED',
+                    entityId: booking._id,
+                    bookingId: booking._id,
+                    dedupeKey: `BOOKING_UPDATED:${booking._id}:${assignedWorkerId}:${Date.now()}`,
+                });
+            });
+        }
 
         return res.status(200).json({
             success: true,
@@ -668,7 +901,10 @@ export const getBookingHistory = async (req, res) => {
             .populate('service')
             .populate('worker', 'name phone avatar workerProfile')
             .populate('customer', 'name phone avatar')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
+
+        await attachReviewFlags(bookings);
 
         return res.status(200).json({
             success: true,
@@ -894,14 +1130,26 @@ export const listWorkerIncoming = async (req, res) => {
 
         const { page, limit, skip } = paginate(req);
 
-        // Fetch open bookings waiting for workers (open pool or assigned to this worker)
+        // Fetch open bookings waiting for workers (open pool or assigned to this worker).
+        // Exclude jobs this worker already declined (legacy PENDING+declinedBy rows too).
         const query = {
             status: { $in: ['PENDING', 'SEARCHING'] },
-            $or: [{ worker: null }, { worker: workerId }]
+            $or: [{ worker: null }, { worker: workerId }],
+            $nor: [{ declinedBy: workerId }],
         };
-        const openBookings = await populateBooking(
+        let openBookings = await populateBooking(
             Booking.find(query).sort({ createdAt: -1 })
         ).lean();
+        // Belt: string/ObjectId mismatch or stale declineReason-only rows.
+        openBookings = openBookings.filter((b) => {
+            if (b.declinedBy != null && String(b.declinedBy) === String(workerId)) {
+                return false;
+            }
+            if (b.declineReason && String(b.worker) === String(workerId)) {
+                return false;
+            }
+            return true;
+        });
 
         // If coordinates could not be resolved at all, fallback to un-filtered pagination
         if (isNaN(workerLng) || isNaN(workerLat)) {
@@ -933,7 +1181,7 @@ export const listWorkerIncoming = async (req, res) => {
                     ...b,
                     distanceKm: roundedDist,
                     distanceFormatted: `${roundedDist} km`,
-                    distanceDisplay: `${roundedDist}m`
+                    distanceDisplay: `${roundedDist} km`
                 });
             }
         }
@@ -1022,16 +1270,33 @@ export const declineBooking = async (req, res) => {
         }
         booking.declineReason = reason;
         booking.declinedBy = req.user.id;
+        booking.status = 'CANCELLED';
+        booking.cancelledBy = req.user.id;
+        booking.cancelReason = reason;
+        booking.cancelledAt = new Date();
         await booking.save();
         const io = req.app.get('io');
         if (io) {
-            io.to(`booking_${booking._id}`).emit('booking:declined', {
-                bookingId: booking._id,
+            const payload = {
+                bookingId: String(booking._id),
+                canonicalBookingId: booking.bookingId,
+                status: 'CANCELLED',
                 reason,
                 workerId: req.user.id,
-            });
+                declined: true,
+            };
+            io.to(`booking_${booking._id}`).emit('booking:declined', payload);
+            io.to(`booking_${booking._id}`).emit('booking_status_update', payload);
+            const customerId = booking.customer ? String(booking.customer) : null;
+            if (customerId) {
+                io.to(`customer_${customerId}`).emit('booking_status_update', payload);
+                io.to(`user_${customerId}`).emit('booking_status_update', payload);
+            }
         }
-        return res.status(200).json({ success: true, data: { declined: true, reason } });
+        return res.status(200).json({
+            success: true,
+            data: { declined: true, cancelled: true, reason, status: 'CANCELLED' },
+        });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }

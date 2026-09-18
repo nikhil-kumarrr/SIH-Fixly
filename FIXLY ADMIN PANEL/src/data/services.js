@@ -1,8 +1,56 @@
+export const OFFICIAL_CATEGORIES = [
+  'Electrician',
+  'Plumber',
+  'Carpenter',
+  'Painter',
+  'Gardener',
+  'Domestic Helper',
+  'Caregiving',
+  'Driver',
+  'Technician',
+  'Cleaning',
+];
+
+/**
+ * Converts any string to Title Case (Each word's first character uppercase, rest lowercase)
+ * Handles snake_case, kebab-case, extra whitespace cleanly.
+ * e.g., 'plumber' -> 'Plumber'
+ * e.g., 'domestic_helper' -> 'Domestic Helper'
+ * e.g., 'ac repair' -> 'Ac Repair'
+ */
+export const toTitleCase = (str = '') => {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
+/**
+ * Normalizes any category string into Title Case for UI display.
+ * Dynamic: does not hardcode words with else-if chains!
+ */
+export const normalizeCategory = (category = '') => {
+  if (!category) return '';
+  return toTitleCase(category.trim());
+};
+
+export const getMergedCategories = (dynamicList = []) => {
+  const custom = (dynamicList || [])
+    .map(s => s.category || s.service || s.trade)
+    .filter(Boolean)
+    .map(c => normalizeCategory(c));
+  return Array.from(new Set([...OFFICIAL_CATEGORIES, ...custom]));
+};
+
 export const initialServices = [
   {
     id: 'SRV-01',
     name: 'Plumbing Services',
-    category: 'Plumbing',
+    category: 'Plumber',
     description: 'Expert pipe repairs, leakage fixes, bathroom fittings, motor installation, and sanitary maintenance.',
     basePrice: '₹350',
     rawPrice: 350,

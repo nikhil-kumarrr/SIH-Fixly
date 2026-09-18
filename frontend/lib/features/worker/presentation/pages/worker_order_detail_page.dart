@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -6,10 +8,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/router/route_names.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/network/api_config.dart';
 import '../../../../core/preferences/app_preferences.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
+import '../../../../services/webrtc_call_service.dart';
 import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
 import '../../../shared/data/service_scope_data.dart';
@@ -24,7 +29,8 @@ class WorkerOrderDetailPage extends StatefulWidget {
   State<WorkerOrderDetailPage> createState() => _WorkerOrderDetailPageState();
 }
 
-class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
+class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage>
+    with RefreshWhenNavigatedTo {
   Booking? _booking;
   WorkerJob? _feedJob;
   bool _loading = true;
@@ -32,14 +38,25 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
   String? _error;
 
   @override
-  void initState() {
-    super.initState();
-    _resolve();
+  List<String> get refreshRoutePaths => [RouteNames.workerJobDetail];
+
+  @override
+  void onScreenRefresh() {
+    unawaited(_resolve(forceNetwork: true));
   }
 
-  Future<void> _resolve() async {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_resolve());
+  }
+
+  Future<void> _resolve({bool forceNetwork = false}) async {
     try {
-      final booking = await BookingsApiRepository().getById(widget.jobId);
+      final booking = await BookingsApiRepository().getById(
+        widget.jobId,
+        forceNetwork: forceNetwork,
+      );
       if (!mounted) return;
       setState(() {
         _booking = booking;
@@ -66,7 +83,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
         context: context,
         message: '🎉 Booking accepted! Head to the customer location.',
       );
-      context.go(RouteNames.workerActiveJob);
+      context.goRefreshing(RouteNames.workerActiveJob);
     } catch (e) {
       if (!mounted) return;
       setState(() => _accepting = false);
@@ -74,10 +91,42 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
     }
   }
 
-  Future<void> _callCustomer(String phone) async {
-    final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-    final uri = Uri.parse('tel:$clean');
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  Future<void> _callCustomerWebRtc() async {
+    final bookingId = _booking?.id ?? widget.jobId;
+    if (bookingId.isEmpty) {
+      if (!mounted) return;
+      ToastUtils.showError(context: context, message: 'Booking ID not available');
+      return;
+    }
+    final peerName =
+        (_booking?.customerName ?? _feedJob?.customerName ?? 'Customer').trim();
+    final peerAvatar = _booking?.customerAvatar ?? _feedJob?.customerAvatar;
+    final serviceTitle =
+        _booking?.serviceTitle ?? _feedJob?.title ?? 'Fixly Service';
+
+    context.push(
+      RouteNames.call,
+      extra: {
+        'bookingId': bookingId,
+        'peerName': peerName.isEmpty ? 'Customer' : peerName,
+        'peerRole': 'customer',
+        'peerAvatar': peerAvatar,
+        'serviceTitle': serviceTitle,
+        'isIncoming': false,
+      },
+    );
+
+    final success = await WebRTCCallService.instance.startCall(
+      bookingId: bookingId,
+      expectedPeerName: peerName.isEmpty ? 'Customer' : peerName,
+      expectedPeerRole: 'customer',
+      expectedPeerAvatar: peerAvatar,
+      expectedServiceTitle: serviceTitle,
+    );
+
+    if (!success && mounted) {
+      ToastUtils.showError(context: context, message: 'Could not connect call');
+    }
   }
 
   String _formatMediaUrl(String path) {
@@ -171,7 +220,9 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
     final customerAvatar = booking?.customerAvatar ?? fallback?.customerAvatar;
     final address = booking?.address ?? fallback?.address ?? '';
     final category = booking?.serviceCategory ?? fallback?.serviceCategory ?? '';
-    final amount = booking?.totalPrice ?? fallback?.pay ?? 0.0;
+    final amount = booking?.workerPayout ?? fallback?.workerPayout ?? fallback?.pay ?? 0.0;
+    final platformFee = booking?.platformFee ?? booking?.invoice?.platformFee ?? fallback?.platformFee ?? 0.0;
+    final customerPaid = booking?.totalAmount ?? booking?.invoice?.totalAmount ?? booking?.totalPrice;
     final createdAt = booking?.createdAt;
 
     final isPending = booking?.status == BookingStatus.searching ||
@@ -268,7 +319,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                category,
+                                localizeCategory(category, context.l10n.locale),
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 10,
@@ -393,10 +444,9 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
                             ],
                           ),
                         ),
-                        // Call button
-                        if (customerPhone != null && customerPhone.isNotEmpty)
-                          FilledButton.tonalIcon(
-                            onPressed: () => _callCustomer(customerPhone),
+                        // Call button — in-app WebRTC only (never tel:)
+                        FilledButton.tonalIcon(
+                            onPressed: _callCustomerWebRtc,
                             style: FilledButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               visualDensity: VisualDensity.compact,
@@ -669,6 +719,14 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
                         isDark: isDark,
                       ),
                     ],
+                    if (platformFee > 0) ...[
+                      const SizedBox(height: 8),
+                      _PriceRow(
+                        label: 'Platform fee (deducted)',
+                        amount: -platformFee,
+                        isDark: isDark,
+                      ),
+                    ],
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 10),
                       child: Divider(height: 1),
@@ -678,7 +736,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
                       children: [
                         const Flexible(
                           child: Text(
-                            'Total Worker Payout',
+                            'Your Payout',
                             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                           ),
                         ),
@@ -693,6 +751,13 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage> {
                         ),
                       ],
                     ),
+                    if (customerPaid != null && platformFee > 0) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Customer paid ₹${customerPaid.toStringAsFixed(0)}',
+                        style: TextStyle(fontSize: 11, color: mutedText),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1144,13 +1209,17 @@ class _PriceRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            '₹${amount.toStringAsFixed(0)}',
+            amount < 0
+                ? '-₹${amount.abs().toStringAsFixed(0)}'
+                : '₹${amount.toStringAsFixed(0)}',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: highlight
-                  ? Colors.red
-                  : (isDark ? Colors.white70 : const Color(0xFF334155)),
+              color: amount < 0
+                  ? const Color(0xFFDC2626)
+                  : (highlight
+                      ? Colors.red
+                      : (isDark ? Colors.white70 : const Color(0xFF334155))),
             ),
           ),
         ],

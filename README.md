@@ -1,294 +1,709 @@
-# Fixly — Cooperative Home Services Platform
+# Fixly — Cooperative Gig Services Platform
 
-> An AI-powered cooperative service marketplace connecting households with verified skilled workers while promoting fair wages, worker welfare, and trusted service delivery.
+**SIH Problem Statement:** Cooperative Gig Services Platform for Household & Community Services  
+**Repo:** `SIH-Fixly` · **Stack:** Flutter · Node.js/Express · React (Vite) · Python ML · MongoDB · Redis
 
-![Smart India Hackathon](https://img.shields.io/badge/Smart%20India%20Hackathon-2026-blue)
-![Problem Statement](https://img.shields.io/badge/PS-SIH26089-orange)
-![Category](https://img.shields.io/badge/Category-Software-green)
+Fixly connects **customers** with **verified cooperative workers** for on-demand household services (plumbing, electrical, cleaning, and more). Unlike typical gig aggregators, Fixly is built around **cooperative federations**, fair wage floors, worker welfare, and an AI concierge (**Flexi**) that can book jobs via chat or live voice.
 
-## 📌 About Fixly
+---
 
-Fixly is a cooperative-owned digital platform designed to connect households and institutions with verified skilled workers from Labour Cooperative Federations and Labour Cooperative Societies.
+## Table of contents
 
-The platform brings customers, workers, and cooperative federations together in a single ecosystem for reliable service delivery, fair wages, worker welfare, and consumer trust.
+1. [What Fixly is](#1-what-fixly-is)
+2. [Architecture overview](#2-architecture-overview)
+3. [Repository layout](#3-repository-layout)
+4. [Feature map (SIH)](#4-feature-map-sih)
+5. [Frontend — Flutter app](#5-frontend--flutter-app)
+6. [Backend — Node API](#6-backend--node-api)
+7. [Admin panel — React](#7-admin-panel--react)
+8. [AI / ML microservices](#8-ai--ml-microservices)
+9. [Flexi AI (LangGraph + Gemini Live)](#9-flexi-ai-langgraph--gemini-live)
+10. [Real-time systems](#10-real-time-systems)
+11. [Data model (high level)](#11-data-model-high-level)
+12. [Prerequisites](#12-prerequisites)
+13. [Local setup (step by step)](#13-local-setup-step-by-step)
+14. [Environment variables](#14-environment-variables)
+15. [API surface](#15-api-surface)
+16. [Booking lifecycle](#16-booking-lifecycle)
+17. [Docker & deployment](#17-docker--deployment)
+18. [Tests](#18-tests)
+19. [Extra documentation](#19-extra-documentation)
+20. [Security notes](#20-security-notes)
+21. [Team / SIH context](#21-team--sih-context)
 
-## 🎯 Problem Statement
+---
 
-### SIH26089 — Cooperative Gig Services Platform for Household & Community Services
+## 1. What Fixly is
 
-Labour cooperatives have a large pool of skilled workers such as electricians, plumbers, carpenters, painters, domestic helpers, caregivers, drivers, gardeners, cleaners, and technicians.
+Fixly is a full-stack platform with four client-facing surfaces that share one backend:
 
-However, many of these workers lack access to a structured digital marketplace that connects them with households and institutions.
+| Surface | Who uses it | Tech |
+|--------|-------------|------|
+| **Customer app** | Book services, track workers, pay, SOS, Flexi AI | Flutter |
+| **Worker app** | Accept jobs, navigate, estimate, wallet, KYC, welfare | Flutter (same binary, role switch) |
+| **Admin / Federation panel** | Approve workers, manage bookings, wages, federations | React + Vite + Tailwind |
+| **ML services** | Discovery, KYC face match, demos | Python (FastAPI / http.server) |
 
-Fixly aims to create a trusted cooperative-owned service marketplace providing verified service providers, fair wages, reliable service, worker welfare, transparent payments, real-time coordination, and AI-powered workforce intelligence.
+**Product pillars**
 
-# 🚀 Key Features
+- **Cooperative governance** — Super Admin + Federation Admins; data scoped per cooperative
+- **Trust & safety** — KYC face match, certificate OCR, OTP arrival, SOS broadcast, encrypted WebRTC calls
+- **Fair work** — minimum wage floors, estimation before start, Razorpay payouts, welfare / e-Shram links
+- **AI assistance** — Flexi chat + Gemini Live voice; service discovery; issue analysis (text/vision)
 
-### 🤖 Flexi AI Assistant
-- Voice and text-based service requests
-- Service identification
-- Vision-based issue identification
-- Smart booking assistance
-- Estimated service cost
+---
 
-### 👷 Worker Registration & Verification
-- KYC verification
-- Skill profiling
-- Skill certification
-- Cooperative membership
-- Worker availability
+## 2. Architecture overview
 
-### 📍 AI & Geo-Based Worker Matching
-- Location-based matching
-- Skill and certification matching
-- Availability-aware assignment
-- Demand-aware workforce planning
-
-### 📊 AI Demand Forecasting
-Uses service and historical demand information to help cooperatives anticipate demand and plan workforce allocation.
-
-### 🗺️ Live Service Tracking
-- Real-time GPS tracking
-- Worker location
-- Estimated arrival
-- Service status updates
-
-### 📞 In-App Communication
-Enables customers and workers to coordinate service-related communication through the platform.
-
-### 🛡️ OTP-Based Job Verification
-Customer Request → Worker Assignment → Arrival → OTP Verification → Service Start
-
-### 💰 Fair Payments & Digital Invoicing
-- UPI and card payments
-- Digital invoices
-- Worker wallet
-- Transparent charges
-- Worker earnings tracking
-
-### 🆘 Emergency & SOS Support
-- Emergency service requests
-- One-tap SOS
-- Cooperative safety support
-- Location sharing
-
-### ⭐ Rating & Feedback
-Customer ratings and feedback support service-quality monitoring and consumer trust.
-
-### 🛡️ Worker Welfare & Insurance
-- Health insurance
-- Accident coverage
-- Emergency assistance
-- Tool grants
-- Worker welfare programs
-
-# 🔄 End-to-End Workflow
-
-```text
-Customer Request
-       ↓
-AI Service Identification
-       ↓
-Service / Price Estimation
-       ↓
-Geo-Based Worker Matching
-       ↓
-Verified Worker Assignment
-       ↓
-Worker Accepts Job
-       ↓
-Live GPS Tracking
-       ↓
-Worker Reaches Customer
-       ↓
-OTP Verification
-       ↓
-Service Execution
-       ↓
-Digital Payment
-       ↓
-Invoice Generation
-       ↓
-Worker Wallet Credit
-       ↓
-Rating & Feedback
+```
+┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐
+│  Flutter app    │  │  Admin panel    │  │  (optional) Python   │
+│  customer/worker│  │  Vite React     │  │  ML microservices    │
+└────────┬────────┘  └────────┬────────┘  └──────────┬───────────┘
+         │ HTTPS JWT          │ HTTPS JWT            │ HTTP (proxied)
+         │ Socket.IO          │                      │ by Node when
+         ▼                    ▼                      │ toggles ON
+┌────────────────────────────────────────────────────────────────┐
+│                     Node.js Express API (:8000)                 │
+│  Auth · Bookings · Payments · AI agent · Support · Admin · …   │
+│  Socket.IO (tracking, WebRTC signaling) · BullMQ workers       │
+└───────────────┬─────────────────────────────┬──────────────────┘
+                │                             │
+                ▼                             ▼
+         ┌─────────────┐              ┌─────────────┐
+         │  MongoDB    │              │   Redis     │
+         │  ledger     │              │  sessions,  │
+         │  GeoJSON    │              │  queues,    │
+         └─────────────┘              │  Socket adapter
+                                      └─────────────┘
+                │
+                ├─▶ Razorpay / RazorpayX
+                ├─▶ Firebase FCM
+                ├─▶ Cloudinary
+                ├─▶ SMTP (OTP / email)
+                ├─▶ Groq / Gemini (LLMs + Live token mint)
+                └─▶ Python :8002 discovery, :8004 KYC (optional)
 ```
 
-# 🏗️ System Architecture
+**Rule of thumb:** Flutter and Admin talk to **Node only**. Python ML is never called directly from the mobile app for business data. Exception: **Gemini Live** voice opens a short-lived WebSocket to Google after Node mints an ephemeral token; booking tools still go back through Node.
 
-```text
-                    ┌───────────────────────┐
-                    │      Customers        │
-                    │   Service Requests    │
-                    └───────────┬───────────┘
-                                │
-                                ▼
-                    ┌───────────────────────┐
-                    │      Fixly AI         │
-                    │ Voice / Vision / NLP  │
-                    │ Service Identification│
-                    └───────────┬───────────┘
-                                │
-                ┌───────────────┴────────────────┐
-                ▼                                ▼
-      ┌──────────────────┐             ┌──────────────────┐
-      │ AI Matching &    │             │ Geo-Spatial      │
-      │ Forecasting      │             │ Service Engine   │
-      └────────┬─────────┘             └────────┬─────────┘
-               └───────────────┬────────────────┘
-                               ▼
-                    ┌───────────────────────┐
-                    │ Cooperative Workforce│
-                    │ Verified Workers      │
-                    │ Skills & Availability │
-                    └───────────┬───────────┘
-                                │
-                                ▼
-                    ┌───────────────────────┐
-                    │ Real-Time Service     │
-                    │ GPS • OTP • Calling   │
-                    └───────────┬───────────┘
-                                │
-                                ▼
-                    ┌───────────────────────┐
-                    │ Payment & Invoicing   │
-                    │ Wallet • Feedback     │
-                    └───────────────────────┘
-                                ▲
-                                │
-                    ┌───────────────────────┐
-                    │ Cooperative Federation│
-                    │ Governance • Welfare  │
-                    │ Workforce Management  │
-                    └───────────────────────┘
+---
+
+## 3. Repository layout
+
+```
+SIH-Fixly/
+├── frontend/                 # Flutter mobile app (customer + worker)
+├── backend/                  # Express API, sockets, queues, LangGraph agent
+├── FIXLY ADMIN PANEL/        # React cooperative / super-admin dashboard
+├── ai_ml/                    # Python ML microservices + start_all.py
+├── doc/                      # Architecture, guides, slide decks, per-layer notes
+├── docs/                     # Superpowers specs/plans (design docs)
+├── scripts/                  # HF Spaces deploy, ML keepalive
+├── docker-compose.flutter.yml
+├── render.yaml               # Render blueprint for ML Docker services
+└── README.md                 # This file
 ```
 
-# 👥 Stakeholders
+| Path | Role |
+|------|------|
+| `frontend/lib/features/` | Feature modules (auth, bookings, AI, worker, customer, …) |
+| `frontend/lib/core/` | Network, auth storage, l10n, Firebase, navigation |
+| `backend/controllers/` | HTTP handlers |
+| `backend/models/` | Mongoose schemas |
+| `backend/routes/` | Route mounts under `/api/*` |
+| `backend/agent/` | Flexi LangGraph agent |
+| `backend/worker/` | BullMQ consumers (email, upload, notifications, scheduled bookings) |
+| `backend/sockets/` | Live tracking + WebRTC signaling |
+| `FIXLY ADMIN PANEL/src/pages/` | Dashboard screens |
+| `ai_ml/service_discovery/` | Sklearn classifier (port **8002**) |
+| `ai_ml/identity_verification/` | DeepFace KYC (port **8004**) |
+| `ai_ml/support_chatbot/` | Rule-based demo (port **8080**) |
+| `ai_ml/worker_Reliability_Score/` | Reliability demo (port **8082**) |
 
-## 🏠 Customers
-- Verified service providers
-- Transparent pricing
-- Faster service
-- Live tracking
-- Secure payments
-- Emergency support
+---
 
-## 👷 Workers
-- Fair wages
-- Verified job opportunities
-- Better workforce utilization
-- Digital earnings
-- Welfare support
-- Insurance and safety benefits
+## 4. Feature map (SIH)
 
-## 🤝 Cooperative Federations
-- Worker registration and verification
-- Skill certification
-- Workforce management
-- Service monitoring
-- Welfare administration
-- Demand-based workforce planning
-- Cooperative governance
+Implemented and integrated across stack (see `doc/what_changes_we_have.md` for deeper notes):
 
-# 💡 What Makes Fixly Different?
+1. **Provider registration & verification** — selfie + ID → DeepFace match; duplicate Aadhaar/PAN checks; admin review band
+2. **Skill profiling & certification** — certificate upload + Gemini Vision OCR + name fuzzy match
+3. **Customer booking & scheduling** — ASAP or schedule (up to ~7 days); BullMQ reminders
+4. **Automated worker matching** — geospatial + rating/availability/verification scoring
+5. **Live job tracking** — Socket.IO GPS into booking rooms; Mapbox on Flutter
+6. **OTP arrival & job timeline** — arrive PIN → estimate → start → complete → pay
+7. **Payments & worker wallet** — Razorpay customer pay; wallet + payout requests
+8. **Reviews & reliability** — reviews feed Node-side reliability metrics
+9. **Support & AI concierge** — tickets + Flexi chat/voice + issue analyze / discovery
+10. **SOS / emergency** — room broadcast + radius alert; emergency contacts
+11. **Cooperative / federation governance** — multi-tenant admin scoping
+12. **Welfare & fair wage** — wage floors, insurance/welfare modules, e-Shram/UAN links
 
-Fixly is not just another home-service marketplace.
+---
 
-### Conventional Model
-```text
-Customer → Platform → Gig Worker
+## 5. Frontend — Flutter app
+
+**Location:** `frontend/`  
+**Package name:** `fixly`  
+**SDK:** Dart `>=3.7.0 <4.0.0`
+
+### 5.1 Roles in one app
+
+Same APK/IPA; after auth, user is **customer** or **worker** (role flows under `lib/features/role`, `customer`, `worker`).
+
+### 5.2 Feature folders (`lib/features/`)
+
+| Feature | Purpose |
+|---------|---------|
+| `auth` | Login, register, OTP, Google Sign-In |
+| `home` | Home feeds, banners, discovery entry |
+| `bookings` | Create/track bookings, status UI |
+| `customer` | Customer-specific flows (AI helper, service detail, …) |
+| `worker` | Jobs, rates, estimation, wallet, welfare, KYC |
+| `workers` | Browse/match workers |
+| `ai` | Flexi chat/Live repositories & UI hooks |
+| `payments` | Razorpay checkout |
+| `reviews` | Post-job reviews |
+| `cooperative` | Cooperative-related screens |
+| `language` | Locale switching |
+| `splash` / `system` | Boot, app-version gate |
+| `demo` | Demo / showcase paths |
+
+Supporting layers:
+
+- `lib/core/` — Dio client, secure storage, Firebase Messaging, permissions, Mapbox config, l10n
+- `lib/services/` — Gemini Live, WebRTC, speech, AI agent helpers, call sounds
+- `lib/shared/` — Shared widgets/pages (e.g. SOS)
+
+### 5.3 Notable libraries
+
+| Area | Packages |
+|------|----------|
+| State / routing | `flutter_bloc`, `go_router`, `equatable` |
+| Maps | `mapbox_maps_flutter`, `geolocator`, `geocoding` |
+| Realtime | `socket_io_client`, `flutter_webrtc`, `flutter_callkit_incoming` |
+| AI / voice | `speech_to_text`, `flutter_tts`, `record`, `web_socket_channel`, custom Gemini Live service |
+| Payments | `razorpay_flutter` |
+| Auth / push | `firebase_core`, `firebase_messaging`, `google_sign_in`, `flutter_secure_storage` |
+| Media | `image_picker`, `cached_network_image`, `video_player`, `pdf` / `printing` |
+
+### 5.4 Run (local)
+
+```bash
+cd frontend
+cp .env.example .env          # set Mapbox + API_BASE_URL
+cp dart_defines.example.json dart_defines.json   # same keys for --dart-define-from-file
+
+flutter pub get
+flutter run --dart-define-from-file=dart_defines.json
 ```
 
-### Fixly Model
-```text
-                 Cooperative Federation
-                         │
-          ┌──────────────┼──────────────┐
-          │              │              │
-      Verified       Fair Wage      Worker Welfare
-       Workers        System          & Insurance
-          │              │              │
-          └──────────────┼──────────────┘
-                         │
-                       Fixly
-                         │
-                      Customer
+Optional Docker loop (ADB to host emulator): see `docker-compose.flutter.yml` and `doc/frontend/DOCKER_GUIDE.md`.
+
+### 5.5 Config keys (Flutter)
+
+| Key | Meaning |
+|-----|---------|
+| `API_BASE_URL` | Backend base URL (local IP, tunnel, or prod) |
+| `Mapbox_api_key` / `ACCESS_TOKEN` | Mapbox public token (`pk.*`) |
+
+Never commit real `.env` or filled `dart_defines.json` with secrets.
+
+---
+
+## 6. Backend — Node API
+
+**Location:** `backend/`  
+**Runtime:** Node.js (ES modules) · **Default port:** `8000`  
+**Docs:** Swagger UI at `http://localhost:8000/api-docs` (generate with `npm run swagger`)
+
+### 6.1 Tech stack
+
+| Concern | Choice |
+|---------|--------|
+| HTTP | Express 5 |
+| DB | MongoDB + Mongoose (GeoJSON `2dsphere`) |
+| Cache / sessions / queues | Redis + BullMQ + ioredis |
+| Realtime | Socket.IO (+ Redis adapter) |
+| Auth | JWT access + refresh; multi-device `deviceId` sessions in Redis |
+| Payments | Razorpay |
+| Push | Firebase Admin (FCM) |
+| Media | Cloudinary + Multer upload pipeline |
+| AI | Groq, Google Generative AI, LangChain / LangGraph |
+| Security | Helmet, CORS, rate limits, NoSQL key sanitizer |
+| Email | Nodemailer (OTP / transactional via queue) |
+
+### 6.2 Background workers (auto-imported on start)
+
+| Worker | Job |
+|--------|-----|
+| `emailWorker.js` | Outbound email |
+| `uploadWorker.js` | Async uploads |
+| `notificationWorker.js` | Push / notification fan-out |
+| `scheduledBookingWorker.js` | Scheduled booking reminders |
+
+### 6.3 Run
+
+```bash
+cd backend
+cp .env.example .env   # fill Mongo, Redis, secrets, optional AI keys
+npm install
+npm run swagger        # optional — refresh swagger-output.json
+npm start              # node server.js
 ```
 
-Fixly combines **AI + Geo-Spatial Matching + Cooperative Governance + Real-Time Services + Worker Welfare** to create a more balanced service ecosystem.
+Health: `GET /` → `{ status: 'success', message: 'GigConnect API Platform is active' }`
 
-# 🧠 AI & Intelligence Layer
+Seed helpers (when needed):
 
-- Service classification
-- Voice-based request understanding
-- Vision-based issue identification
-- Estimated pricing
-- Worker matching
-- Demand forecasting
-- Workforce allocation
-- Smart scheduling
+```bash
+npm run seed                    # scripts/seedData.js
+node scripts/seed-admin.js      # admin user seed
+```
 
-# 🔐 Trust & Safety
+### 6.4 Auth notes
 
-- KYC verification
-- Skill certification
-- Cooperative membership
-- Worker ratings
-- OTP job verification
-- Live GPS tracking
-- Secure communication
-- Digital payments
-- Emergency SOS
+- Register → email OTP → verify → tokens
+- Google login via Firebase ID token
+- Send **`deviceId`** on login / OTP verify / logout for session isolation (see `backend/README`)
+- Refresh token rotation supported
 
-# 🌱 Expected Impact
+---
 
-### For Workers
-**Fairer opportunities → Better utilization → Better earnings → Stronger welfare**
+## 7. Admin panel — React
 
-### For Customers
-**Verified workers → Transparent pricing → Reliable service → Higher trust**
+**Location:** `FIXLY ADMIN PANEL/`  
+**Stack:** React 18 · Vite 5 · Tailwind · React Router · Leaflet · Recharts · Axios
 
-### For Cooperatives
-**Digital workforce → Better allocation → Data-driven planning → Stronger governance**
+### 7.1 Who logs in
 
-# 📱 Prototype
+- **Super Admin** — platform-wide: federations, settings, API keys, language control
+- **Federation Admin** — scoped to own cooperative (middleware on backend)
 
-The Fixly prototype demonstrates customer and worker workflows including service discovery, booking, worker matching, live tracking, payment, and feedback.
+### 7.2 Routes / pages
 
-> Add screenshots and demo links here.
+| Path | Screen |
+|------|--------|
+| `/login` | Auth |
+| `/impersonate` | Impersonation helper |
+| `/dashboard` | KPIs, recent bookings, maps |
+| `/bookings` | Booking management |
+| `/workers`, `/workers/:id` | Worker list & detail |
+| `/approvals` | KYC / onboarding approvals |
+| `/customers`, `/customers/:id` | Customers |
+| `/services` | Service catalog |
+| `/payments` | Payments / payouts |
+| `/insurance` | Insurance policies |
+| `/reviews` | Reviews moderation |
+| `/reports` | Reports |
+| `/analytics` | Charts / analytics |
+| `/ai-insights` | AI-related insights |
+| `/notifications` | Notification center |
+| `/support` | Support tickets |
+| `/settings` | Platform settings + API keys |
+| `/federations`, `/federations/:id` | Cooperative federation admin |
+| `/language-control` | Locale / copy toggles |
+| `/theme` | Theme showcase |
 
-# 🚀 Future Scope
+### 7.3 Run
 
-- Advanced demand forecasting
-- Automated workforce allocation
-- Multilingual voice interaction
-- More vision-based service detection
-- Cooperative performance analytics
-- Expanded insurance integrations
-- Government/cooperative ecosystem integration
-- Multi-city deployment
-- Institution and community service contracts
+```bash
+cd "FIXLY ADMIN PANEL"
+npm install
+npm run dev      # typically http://localhost:5173
+npm run build    # production bundle
+```
 
-# 🎯 Smart India Hackathon
+Point the panel’s API base URL at the running backend (see panel `.env` / Vite env — do not commit secrets). Netlify config: `netlify.toml`.
 
-| Detail | Information |
-|---|---|
-| Competition | Smart India Hackathon 2026 |
-| Problem Statement | SIH26089 |
-| Organization | Ministry of Cooperation |
-| Department | National Council for Cooperative Training (NCCT) |
-| Category | Software |
-| Theme | Agriculture, FoodTech & Rural Development |
-| Solution | Fixly — Cooperative Home Services Platform |
+---
 
-# 👨‍💻 Team
+## 8. AI / ML microservices
 
-### Team Fixly
+**Location:** `ai_ml/`  
+**Launcher:** `python3 start_all.py` (starts all present services; Ctrl+C stops all)
 
-Built for **Smart India Hackathon 2026**.
+| Service | Port | Stack | Wired into production Node? |
+|---------|------|-------|------------------------------|
+| Service Discovery | **8002** | FastAPI + sklearn TF-IDF + `.pkl` | **Yes** when `AI_DISCOVERY_ENABLED=true` |
+| Identity Verification | **8004** | FastAPI + DeepFace / face match | **Yes** when `AI_VERIFY_ENABLED=true` |
+| Support Chatbot (demo) | **8080** | Rule engine + http.server | **Demo**; app support uses Node LLM path |
+| Worker Reliability (demo) | **8082** | joblib demo store | **Demo**; app uses Node `computeReliability` on Mongo |
 
-> **Empowering workers. Connecting communities. Strengthening cooperatives.**
+Deployable Docker services for discovery + identity: root `render.yaml` (Render free blueprint).
 
-## 📄 License
+### 8.1 Quick start
 
-This project is developed as part of Smart India Hackathon 2026.
+```bash
+cd ai_ml
+# install deps per service (fastapi, uvicorn, scikit-learn, etc.)
+python3 start_all.py
+```
+
+Useful URLs when up:
+
+- Discovery docs: `http://127.0.0.1:8002/docs`
+- KYC docs: `http://127.0.0.1:8004/docs`
+- Support demo: `http://127.0.0.1:8080/demo/index.html`
+- Reliability demo: `http://127.0.0.1:8082/demo/index.html`
+
+Fallback behavior: if Python discovery/KYC is down or toggles are `false`, Node uses built-in keyword / manual review paths so the app still works.
+
+Deep dive: `doc/HOW_AI_ML_IS_WORKING.md`, `doc/AI_CAPABILITIES_SUMMARY.md`, `doc/ai_ml/README.md`.
+
+---
+
+## 9. Flexi AI (LangGraph + Gemini Live)
+
+**Backend agent:** `backend/agent/` (+ `controllers/agentController.js`, routes `/api/ai/agent/*`)
+
+| Mode | Flow |
+|------|------|
+| **Chat** | Flutter → `POST /api/ai/agent/chat` → LangGraph → Mongo tools (services, workers, bookings) → Redis session (~10 min TTL) → LLM reply (Gemini Flash / Groq) |
+| **Live voice** | Flutter → `POST /api/ai/agent/live-token` → ephemeral Google token → Flutter WebSocket to Gemini Live → booking tools via `POST /api/ai/agent/live-tool` |
+| **Analyze issue** | `POST /api/ai/analyze-issue` — text via Groq; image via Gemini Vision + Cloudinary |
+| **Service discovery** | `POST /api/ai/service-discovery` → optional Python `:8002` → map to Mongo `Service` |
+| **Match workers** | `POST /api/ai/match-workers` — Mongo `$near` + heuristic score |
+
+Design notes for Live dual-lane / orchestration live under `docs/superpowers/`.
+
+**Guardrail:** AI assists and proposes; humans confirm; money and booking truth stay in Node + Mongo.
+
+---
+
+## 10. Real-time systems
+
+| Channel | Purpose |
+|---------|---------|
+| Socket.IO `worker_location_update` | Live GPS into booking room + update worker GeoJSON |
+| Socket.IO SOS | Emergency broadcast to room / map markers in admin |
+| WebRTC signaling (`/api/webrtc`, `sockets/webrtcCallSocket.js`) | Customer ↔ worker encrypted calls; Flutter CallKit |
+| FCM + local notifications | Booking updates, reminders, calls |
+| BullMQ | Email, uploads, notification fan-out, scheduled booking nudges |
+
+Flutter clients: `socket_io_client`, `webrtc_call_service.dart`, Firebase Messaging setup under `lib/core/`.
+
+WebRTC integration guide: `doc/backend/WEBRTC_FLUTTER_INTEGRATION_GUIDE.md`.
+
+---
+
+## 11. Data model (high level)
+
+Primary Mongo collections (Mongoose models in `backend/models/`):
+
+| Model | Role |
+|-------|------|
+| `User` | Customers, workers, admins; location GeoJSON; KYC; federation refs |
+| `Booking` | Job lifecycle + estimates + parties |
+| `Service` | Catalog categories / pricing hints |
+| `Review` | Ratings / comments |
+| `Transaction` / `PayoutRequest` | Money movement |
+| `Notification` / `PushToken` | In-app + FCM |
+| `Cooperative` / `CooperativeSociety` | Federation / society entities |
+| `SupportTicket` | Support |
+| `WorkerCertificate` | Skill docs |
+| `WelfareAccount` / `WelfareResource` / `WelfareTransaction` | Welfare |
+| `InsurancePolicy` | Insurance |
+| `EmergencyContact` | SOS contacts |
+| `Banner` / `Settings` / `AppVersion` | CMS + config + force-update |
+| `WebRTCCallLog` / `VerificationAuditLog` | Auditing |
+
+**Booking `status` enum (simplified timeline):**
+
+`PENDING` → `APPROVED` / `SEARCHING` → `ACCEPTED` → `ARRIVED` → `ESTIMATION_GIVEN` → `READY_TO_START` → `IN_PROGRESS` → `PAYMENT_PENDING` → `COMPLETED`  
+(also `CANCELLED`)
+
+Architecture / ER diagrams: `doc/backend/gigconnect_architecture_and_er_diagram.md` (+ PDF).
+
+---
+
+## 12. Prerequisites
+
+| Tool | Used for |
+|------|----------|
+| Node.js 18+ | Backend + admin panel |
+| Flutter SDK (stable, Dart 3.7+) | Mobile app |
+| MongoDB | Primary database |
+| Redis | Sessions, Socket adapter, BullMQ |
+| Python 3.10+ | Optional ML services |
+| Android Studio / Xcode | Device or emulator |
+| Mapbox account | Maps token |
+| Firebase project | Auth Google + FCM |
+| Razorpay account | Payments (test keys OK locally) |
+
+---
+
+## 13. Local setup (step by step)
+
+### 13.1 Infrastructure
+
+```bash
+# MongoDB & Redis must be reachable at the URIs you put in backend/.env
+# Example local defaults:
+#   MONGO_URI=mongodb://127.0.0.1:27017/fixly
+#   REDIS_URL=redis://127.0.0.1:6379
+```
+
+### 13.2 Backend
+
+```bash
+cd backend
+cp .env.example .env
+# Edit .env — at minimum MONGO_URI, REDIS_URL, JWT_SECRET, REFRESH_SECRET
+npm install
+npm start
+# → http://localhost:8000
+# → http://localhost:8000/api-docs
+```
+
+### 13.3 Admin panel
+
+```bash
+cd "FIXLY ADMIN PANEL"
+npm install
+npm run dev
+# → http://localhost:5173
+```
+
+### 13.4 Flutter
+
+```bash
+cd frontend
+cp .env.example .env
+cp dart_defines.example.json dart_defines.json
+# Set API_BASE_URL to your machine IP or tunnel (not localhost on physical device)
+flutter pub get
+flutter run --dart-define-from-file=dart_defines.json
+```
+
+### 13.5 Optional ML
+
+```bash
+cd ai_ml
+python3 start_all.py
+# Then set in backend/.env:
+#   AI_DISCOVERY_ENABLED=true
+#   AI_VERIFY_ENABLED=true
+#   SERVICE_DISCOVERY_URL=http://127.0.0.1:8002
+#   IDENTITY_VERIFY_URL=http://127.0.0.1:8004
+```
+
+### 13.6 Typical ports
+
+| Service | Port |
+|---------|------|
+| Backend API + Socket.IO | **8000** |
+| Admin Vite | **5173** |
+| Service discovery | **8002** |
+| Identity verification | **8004** |
+| Support chatbot demo | **8080** |
+| Reliability demo | **8082** |
+
+---
+
+## 14. Environment variables
+
+### 14.1 Backend (`backend/.env`)
+
+Copy from `backend/.env.example`. Common keys:
+
+| Variable | Purpose |
+|----------|---------|
+| `PORT` | API port (default `8000`) |
+| `MONGO_URI` | Mongo connection string |
+| `REDIS_URL` | Redis connection string |
+| `JWT_SECRET` / `REFRESH_SECRET` | Token signing |
+| `FCM_PROJECT_ID` / `FCM_CLIENT_EMAIL` / `FCM_PRIVATE_KEY` | Firebase Admin push |
+| `FCM_USE_APPLICATION_DEFAULT` | Use ADC in cloud instead of raw key |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Payments |
+| `AI_DISCOVERY_ENABLED` / `AI_VERIFY_ENABLED` | Toggle Python ML proxies |
+| `SERVICE_DISCOVERY_URL` / `IDENTITY_VERIFY_URL` | ML base URLs |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Email OTP |
+| `CLOUDINARY_*` or DB Settings keys | Image hosting |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Text LLM |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Gemini + Live token mint |
+| `GEMINI_LIVE_MODEL` | Live model id (default `gemini-3.1-flash-live-preview`) |
+
+Many API keys can also be stored in Mongo **Settings** and edited from the Admin panel so operators can rotate without redeploying.
+
+### 14.2 Flutter (`frontend/.env` + `dart_defines.json`)
+
+| Variable | Purpose |
+|----------|---------|
+| `API_BASE_URL` | Backend origin |
+| `Mapbox_api_key` / `ACCESS_TOKEN` | Mapbox `pk.*` |
+
+### 14.3 Admin panel
+
+Use Vite env vars as configured in the panel (API base URL, etc.). Keep `.env` out of git.
+
+---
+
+## 15. API surface
+
+Base: `http://<host>:8000`  
+Interactive: `/api-docs`
+
+| Mount | Domain |
+|-------|--------|
+| `/api/auth` | Register, OTP, login, Google, refresh, logout |
+| `/api/users` | Profiles |
+| `/api/workers` | Worker profiles, reliability, availability |
+| `/api/services` | Service catalog |
+| `/api/bookings` | Booking CRUD + job timeline |
+| `/api/payments` | Razorpay create/verify |
+| `/api/reviews` | Reviews |
+| `/api/home` | Home aggregates / banners |
+| `/api/ai` | Analyze issue, discovery, match workers, demand forecast |
+| `/api/ai/agent` · `/api/agent` | Flexi chat, live-token, live-tool |
+| `/api/upload` | Media upload |
+| `/api/admin` | Admin operations |
+| `/api/verification` | KYC verify pipeline |
+| `/api/worker-certificates` | Certificates |
+| `/api/worker-wallet` | Wallet / payouts |
+| `/api/notifications` | Notifications |
+| `/api/support` | Support chat / tickets |
+| `/api/cooperative` | Federations / societies |
+| `/api/welfare` | Welfare |
+| `/api/webrtc` | Call signaling / logs |
+| `/api/emergency` | SOS / emergency |
+| `/api/version` · `/api/app-version` | Force-update / version gate |
+
+Auth API details (deviceId, OTP bodies): `backend/README`.
+
+---
+
+## 16. Booking lifecycle
+
+End-to-end happy path:
+
+1. **Customer** picks service (or Flexi / discovery suggests category)
+2. **Match** nearby workers (geo + score) or open search
+3. Booking enters **`SEARCHING`** / **`ACCEPTED`**
+4. Worker **en route** — live map via Socket.IO + Mapbox
+5. Worker **arrives** — customer enters OTP → **`ARRIVED`**
+6. Worker submits **estimate** (labor + parts) → customer approves → **`READY_TO_START`**
+7. Job **`IN_PROGRESS`** → complete → **`PAYMENT_PENDING`**
+8. Customer pays (Razorpay) → **`COMPLETED`** → review; worker wallet / payout
+9. Optional: WebRTC call anytime during active job; SOS if unsafe
+
+Scheduled bookings use BullMQ for 24h / 1h / 30m reminders.
+
+---
+
+## 17. Docker & deployment
+
+| Artifact | Purpose |
+|----------|---------|
+| `backend/Dockerfile` + `backend/docker-compose.yml` | API containerization |
+| `frontend/Dockerfile` + `frontend/docker-compose.yml` | Flutter container helpers |
+| `docker-compose.flutter.yml` | Host-emulator ADB loop |
+| `ai_ml/*/Dockerfile` | ML services |
+| `render.yaml` | Render free web services for discovery + identity |
+| `scripts/deploy_hf_spaces.py` | Hugging Face Spaces deploy helper |
+| `scripts/ml_keepalive.sh` | Keep free ML endpoints warm |
+| `FIXLY ADMIN PANEL/netlify.toml` | Static admin hosting |
+
+Production tips:
+
+- Prefer ADC / secret managers for FCM and LLM keys
+- Put Redis + Mongo on managed services
+- Set Flutter `API_BASE_URL` to HTTPS API
+- Enable `AI_*` toggles only when ML URLs are healthy
+
+---
+
+## 18. Tests
+
+### Backend
+
+```bash
+cd backend
+npm test           # run_tests_with_metrics.js wrapper
+npm run test:raw   # node --test tests/*.test.js
+```
+
+Coverage areas include bookings, WebRTC, AI controller, notifications, cooperative/agent flows, app version, etc. (`backend/tests/`).
+
+### Flutter
+
+```bash
+cd frontend
+flutter test
+```
+
+Includes validators, workers API repository, notification payload, app version checks.
+
+### Python ML
+
+Each module under `ai_ml/*/tests` (where present) — run per package README.
+
+---
+
+## 19. Extra documentation
+
+| Doc | Contents |
+|-----|----------|
+| `doc/HOW_AI_ML_IS_WORKING.md` | End-to-end AI wiring (Flutter ↔ Node ↔ Python ↔ Gemini) |
+| `doc/AI_CAPABILITIES_SUMMARY.md` | Capability inventory + gaps |
+| `doc/what_changes_we_have.md` | SIH feature completion summary |
+| `doc/HOW_FIXLY_WORKS_5_SLIDES.html` / `.pdf` | Executive narrative deck |
+| `doc/backend/*` | Backend README, architecture PDF/MD, WebRTC guide |
+| `doc/frontend/*` | Frontend notes + Docker guide |
+| `doc/ai_ml/*` | Per-ML-module docs |
+| `doc/APP_VERSION_AND_REDIS_GUIDE.md` | Version gate + Redis ops |
+| `docs/superpowers/specs/` · `plans/` | Design / implementation plans (e.g. Live dual-lane) |
+| `backend/README` | Auth API contract for clients |
+
+---
+
+## 20. Security notes
+
+- **Never commit** `.env`, service-account JSON, private keys, or real Razorpay/Gemini/Groq secrets
+- Rotate any secret that was ever pushed to git history
+- JWT secrets must be strong and distinct (`JWT_SECRET` ≠ `REFRESH_SECRET`)
+- Rate limiters apply on sensitive routes; Helmet enabled by default
+- Federation middleware scopes admin queries — do not bypass in custom routes
+- KYC images go through Cloudinary; treat URLs as sensitive PII
+- Gemini Live tokens are short-lived; do not log them
+
+---
+
+## 21. Team / SIH context
+
+- Platform name in code/docs may still appear as **GigConnect** / **SkillConnect** in older Swagger titles and backend messages — product brand is **Fixly**
+- AI/ML module ownership (historical): Service Discovery / Matching — Nikhil; Support / Reliability / Fair Price demos — Meenakshi (see `doc/ai_ml/README.md`)
+- Problem framing: cooperative gig work for household & community services with fair wages, verification, and AI-assisted booking
+
+---
+
+## Quick start (cheat sheet)
+
+```bash
+# Terminal 1 — API
+cd backend && cp .env.example .env && npm install && npm start
+
+# Terminal 2 — Admin
+cd "FIXLY ADMIN PANEL" && npm install && npm run dev
+
+# Terminal 3 — Flutter
+cd frontend && cp dart_defines.example.json dart_defines.json && flutter pub get
+flutter run --dart-define-from-file=dart_defines.json
+
+# Terminal 4 — optional ML
+cd ai_ml && python3 start_all.py
+```
+
+Then open:
+
+- API docs → `http://localhost:8000/api-docs`
+- Admin → `http://localhost:5173`
+- Flutter → device / emulator
+
+---
+
+## License
+
+ISC (backend `package.json`); clarify with team before public redistribution of the full monorepo.
+```

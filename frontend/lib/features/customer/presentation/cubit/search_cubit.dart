@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/location/app_location.dart';
+import '../../../../core/network/api_exception.dart';
 import '../../../../shared/models/models.dart';
 import '../../../home/data/home_api_repository.dart';
 import '../../../workers/data/workers_api_repository.dart';
@@ -101,6 +102,7 @@ class SearchCubit extends Cubit<SearchState> {
         nearbyWorkers: const [],
         hasMoreWorkers: false,
         nextWorkerOffset: 0,
+        clearWorkersEmpty: true,
       ),
     );
     try {
@@ -150,16 +152,31 @@ class SearchCubit extends Cubit<SearchState> {
           return b.jobsCompleted.compareTo(a.jobsCompleted);
         });
 
+      final empty = sorted.isEmpty;
       emit(
         state.copyWith(
           nearbyWorkers: sorted,
           isLoadingWorkers: false,
           hasMoreWorkers: page.hasMore,
           nextWorkerOffset: page.nextOffset,
+          clearWorkersEmpty: true,
+          workersEmptyCode: empty ? page.code : null,
+          workersEmptyMessage: empty ? page.message : null,
+          searchRadiusKm: empty ? page.searchRadiusKm : null,
         ),
       );
-    } catch (_) {
-      emit(state.copyWith(nearbyWorkers: const [], isLoadingWorkers: false));
+    } catch (e) {
+      final msg = e is ApiException
+          ? e.message
+          : e.toString().replaceFirst('Exception: ', '');
+      emit(
+        state.copyWith(
+          nearbyWorkers: const [],
+          isLoadingWorkers: false,
+          clearWorkersEmpty: true,
+          workersEmptyMessage: msg,
+        ),
+      );
     }
   }
 

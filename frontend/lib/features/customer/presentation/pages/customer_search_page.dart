@@ -9,6 +9,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/theme_x.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/navigation/customer_navigation.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
@@ -161,21 +162,15 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
             const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
             // 1. Search Bar Header
-            SliverToBoxAdapter(
-              child: _buildSearchBar(context, theme),
-            ),
+            SliverToBoxAdapter(child: _buildSearchBar(context, theme)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
             // 2. Quick Category Filter Pills
-            SliverToBoxAdapter(
-              child: _buildCategoryFilterBar(context, locale),
-            ),
+            SliverToBoxAdapter(child: _buildCategoryFilterBar(context, locale)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
             // 3. Trust & Quality Assurance Banner
-            SliverToBoxAdapter(
-              child: _buildTrustBanner(context, theme),
-            ),
+            SliverToBoxAdapter(child: _buildTrustBanner(context, theme)),
             const SliverToBoxAdapter(child: SizedBox(height: 18)),
 
             // 4. Top-Matching & Nearest Specialists Section
@@ -278,42 +273,71 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(color: context.hairline),
                             ),
-                            child: Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accent.withValues(
-                                      alpha: 0.15,
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.warning.withValues(
+                                          alpha: 0.15,
+                                        ),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.location_off_outlined,
+                                        size: 24,
+                                        color: AppColors.warning,
+                                      ),
                                     ),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.person_search_rounded,
-                                    size: 24,
-                                    color: AppColors.accentDark,
-                                  ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            state.workersEmptyCode ==
+                                                    'NO_WORKERS_FOUND'
+                                                ? 'No professionals nearby'
+                                                : 'No specialists found',
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            state.workersEmptyMessage
+                                                        ?.trim()
+                                                        .isNotEmpty ==
+                                                    true
+                                                ? state.workersEmptyMessage!
+                                                : 'No available professionals found within ${state.searchRadiusKm ?? 20} km. Please try again shortly or select a different category.',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: context.muted,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Auto-Matching Active',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Select any service below and Fixly will auto-dispatch the best specialist to your doorstep.',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(color: context.muted),
-                                      ),
-                                    ],
+                                const SizedBox(height: 12),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton.icon(
+                                    onPressed: () =>
+                                        context.read<SearchCubit>().refresh(),
+                                    icon: const Icon(
+                                      Icons.refresh_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Try again'),
                                   ),
                                 ),
                               ],
@@ -460,9 +484,7 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: theme
-                                    .colorScheme
-                                    .surfaceContainerHighest
+                                color: theme.colorScheme.surfaceContainerHighest
                                     .withValues(alpha: 0.5),
                                 shape: BoxShape.circle,
                               ),
@@ -554,11 +576,7 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
       child: Row(
         children: [
           const SizedBox(width: 14),
-          const Icon(
-            Icons.search_rounded,
-            color: AppColors.primary,
-            size: 22,
-          ),
+          const Icon(Icons.search_rounded, color: AppColors.primary, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
@@ -598,8 +616,10 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
                   onTap: () => context.goCustomerTab(2),
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.accent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
@@ -651,8 +671,7 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
           ),
           const SizedBox(width: 8),
           ...ServiceCategories.all.map((cat) {
-            final isSelected =
-                _activeCategory?.toLowerCase().trim() == cat.id;
+            final isSelected = _activeCategory?.toLowerCase().trim() == cat.id;
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: _CategoryPill(
@@ -676,9 +695,7 @@ class _CustomerSearchViewState extends State<_CustomerSearchView> {
         decoration: BoxDecoration(
           color: AppColors.primary.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: AppColors.primary.withValues(alpha: 0.14),
-          ),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.14)),
         ),
         child: Row(
           children: [
@@ -806,6 +823,7 @@ class _WorkerCard extends StatelessWidget {
 
     return Container(
       width: 270,
+
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -932,7 +950,7 @@ class _WorkerCard extends StatelessWidget {
                                     Text(
                                       worker.rating > 0
                                           ? worker.rating.toStringAsFixed(1)
-                                          : '4.9',
+                                          : 'New',
                                       style: const TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w800,
@@ -1046,7 +1064,7 @@ class _WorkerCard extends StatelessWidget {
                                     : null,
                               ),
                               child: Text(
-                                skill,
+                                localizeCategory(skill, context.l10n.locale),
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: isMatching
@@ -1217,46 +1235,56 @@ class _ServicePackageTile extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Text(
-                        'From ₹${service.priceFrom.toInt()}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary,
+                      Flexible(
+                        child: Text(
+                          'From ₹${service.priceFrom.toInt()}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
                         ),
                       ),
                       if (service.estimatedTime != null &&
                           service.estimatedTime!.isNotEmpty) ...[
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: (context.isDark
-                                ? Colors.white10
-                                : const Color(0xfff1f5f9)),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.access_time_rounded,
-                                size: 11,
-                                color: AppColors.outline,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                service.estimatedTime!,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: (context.isDark
+                                  ? Colors.white10
+                                  : const Color(0xfff1f5f9)),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.access_time_rounded,
+                                  size: 11,
                                   color: AppColors.outline,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(
+                                    service.estimatedTime!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.outline,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],

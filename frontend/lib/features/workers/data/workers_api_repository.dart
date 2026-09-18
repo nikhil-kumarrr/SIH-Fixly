@@ -36,8 +36,25 @@ class WorkersApiRepository {
         if (category != null && category.isNotEmpty) 'category': category,
       },
     );
+    final code = res['code']?.toString();
+    final message = res['message']?.toString();
+    final searchRadiusKm = (res['searchRadiusKm'] as num?)?.toInt();
+
+    // Backend returns HTTP 200 + success:false for empty radius matches.
     if (res['success'] != true) {
-      throw ApiException(res['message']?.toString() ?? 'Workers failed');
+      final emptyList = res['workers'] is! List || (res['workers'] as List).isEmpty;
+      if (code == 'NO_WORKERS_FOUND' || emptyList) {
+        return WorkersPage(
+          workers: const [],
+          hasMore: false,
+          nextOffset: offset,
+          code: code ?? 'NO_WORKERS_FOUND',
+          message: message ??
+              'No available professionals found nearby. Please try again shortly or select a different category.',
+          searchRadiusKm: searchRadiusKm,
+        );
+      }
+      throw ApiException(message ?? 'Workers failed');
     }
     final list = res['workers'];
     final workers = list is List
@@ -53,6 +70,9 @@ class WorkersApiRepository {
       hasMore: res['hasMore'] == true,
       nextOffset:
           (res['nextOffset'] as num?)?.toInt() ?? offset + workers.length,
+      code: code,
+      message: message,
+      searchRadiusKm: searchRadiusKm,
     );
   }
 
@@ -151,11 +171,177 @@ class WorkersApiRepository {
   }
 
   Future<Map<String, dynamic>> fetchMyCooperativeMembership() async {
-    final res = await _api.get('/api/cooperative/my-society');
+    final res = await _api.get(ApiEndpoints.cooperativeMySociety);
     if (res['success'] != true) {
       throw ApiException(res['message']?.toString() ?? 'Failed to fetch cooperative details');
     }
     return Map<String, dynamic>.from(res['data'] as Map? ?? res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchFederations() async {
+    final res = await _api.get(ApiEndpoints.cooperativeFederations);
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Failed to list federations',
+      );
+    }
+    final raw = res['data'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSocieties({
+    String? state,
+    String? district,
+  }) async {
+    final res = await _api.get(
+      ApiEndpoints.cooperativeSocieties,
+      query: {
+        if (state != null && state.isNotEmpty) 'state': state,
+        if (district != null && district.isNotEmpty) 'district': district,
+        'active': 'true',
+      },
+    );
+    if (res['success'] != true) {
+      throw ApiException(res['message']?.toString() ?? 'Failed to list societies');
+    }
+    final raw = res['data'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> joinSociety(String societyId) async {
+    final res = await _api.post(
+      ApiEndpoints.cooperativeJoin,
+      data: {'societyId': societyId},
+    );
+    if (res['success'] != true) {
+      throw ApiException(res['message']?.toString() ?? 'Join society failed');
+    }
+    return Map<String, dynamic>.from(res['data'] as Map? ?? res);
+  }
+
+  Future<Map<String, dynamic>> updateAvailabilitySchedule({
+    required List<int> days,
+    required String startTime,
+    required String endTime,
+  }) async {
+    final res = await _api.put(
+      ApiEndpoints.workerAvailabilitySchedule,
+      data: {
+        'days': days,
+        'startTime': startTime,
+        'endTime': endTime,
+      },
+    );
+    if (res['success'] != true) {
+      throw ApiException(res['message']?.toString() ?? 'Schedule update failed');
+    }
+    return Map<String, dynamic>.from(res['data'] as Map? ?? res);
+  }
+
+  Future<void> setServiceRadiusKm(double km) async {
+    final res = await _api.patch(
+      ApiEndpoints.workerAvailability,
+      data: {'serviceRadiusKm': km},
+    );
+    if (res['success'] != true) {
+      throw ApiException(res['message']?.toString() ?? 'Radius update failed');
+    }
+  }
+
+  /// Trigger AI / admin verification path after setup-profile.
+  Future<void> submitVerification({
+    required String governmentIdType,
+    required String governmentIdNumber,
+    required String governmentIdFrontUrl,
+    required String selfieImageUrl,
+    String? governmentIdBackUrl,
+  }) async {
+    final res = await _api.post(
+      ApiEndpoints.verificationSubmit,
+      data: {
+        'governmentIdType': governmentIdType,
+        'governmentIdNumber': governmentIdNumber,
+        'governmentIdFrontUrl': governmentIdFrontUrl,
+        if (governmentIdBackUrl != null) 'governmentIdBackUrl': governmentIdBackUrl,
+        'selfieImageUrl': selfieImageUrl,
+      },
+    );
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Verification submit failed',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchVerificationStatus() async {
+    final res = await _api.get(ApiEndpoints.verificationMe);
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Verification status failed',
+      );
+    }
+    return Map<String, dynamic>.from(res['data'] as Map? ?? res);
+  }
+
+  Future<void> resubmitVerification(Map<String, dynamic> body) async {
+    final res = await _api.post(ApiEndpoints.verificationResubmit, data: body);
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Verification resubmit failed',
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCertificates() async {
+    final res = await _api.get(ApiEndpoints.workerCertificates);
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Certificates fetch failed',
+      );
+    }
+    final raw = res['data'] ?? res['certificates'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<void> uploadCertificate({
+    required String certificateType,
+    required String fileUrl,
+    String? serviceCategory,
+  }) async {
+    final res = await _api.post(
+      ApiEndpoints.workerCertificates,
+      data: {
+        'certificateType': certificateType,
+        'fileUrl': fileUrl,
+        if (serviceCategory != null) 'serviceCategory': serviceCategory,
+      },
+    );
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Certificate upload failed',
+      );
+    }
+  }
+
+  Future<void> deleteCertificate(String id) async {
+    final res = await _api.delete(ApiEndpoints.workerCertificate(id));
+    if (res['success'] != true) {
+      throw ApiException(
+        res['message']?.toString() ?? 'Certificate delete failed',
+      );
+    }
   }
 
   static WorkerProfile mapWorker(
@@ -189,10 +375,20 @@ class WorkersApiRepository {
     final category = (profileMap['category'] ?? json['category'])?.toString();
     final bio = (profileMap['bio'] ?? json['bio'])?.toString();
     final experienceYears = (profileMap['experienceYears'] as num?)?.toInt();
-    final reviewsRaw = json['reviews'] ?? profileMap['reviews'];
-    final reviews = reviewsRaw is List
+    final reviewsRaw =
+        json['reviews'] ??
+        json['recentReviews'] ??
+        profileMap['reviews'] ??
+        profileMap['recentReviews'];
+    var reviews = reviewsRaw is List
         ? reviewsRaw.whereType<Map>().map(_mapReview).toList()
         : <WorkerReview>[];
+    if (reviews.isEmpty) {
+      final recent = json['recentReviews'] ?? profileMap['recentReviews'];
+      if (recent is List) {
+        reviews = recent.whereType<Map>().map(_mapReview).toList();
+      }
+    }
     final reviewCount =
         (json['reviewCount'] as num?)?.toInt() ??
         (json['totalReviews'] as num?)?.toInt() ??
@@ -234,6 +430,14 @@ class WorkersApiRepository {
     }
     if (category != null && category.isNotEmpty && !categories.any((c) => c.toLowerCase() == category.toLowerCase())) {
       categories.insert(0, category);
+    }
+
+    final rawWorkPhotos = profileMap['recentWorkPhotos'] ?? json['recentWorkPhotos'] ?? profileMap['photos'] ?? json['photos'];
+    final recentWorkPhotos = <String>[];
+    if (rawWorkPhotos is List) {
+      for (final p in rawWorkPhotos) {
+        if (p is String && p.trim().isNotEmpty) recentWorkPhotos.add(p.trim());
+      }
     }
 
     return WorkerProfile(
@@ -296,13 +500,67 @@ class WorkersApiRepository {
           : (json['excludedTasks'] is List
               ? (json['excludedTasks'] as List).map((e) => e.toString()).toList()
               : const <String>[])),
+      recentWorkPhotos: recentWorkPhotos,
+    );
+  }
+
+  Future<ReviewsPage> fetchWorkerReviews(
+    String workerId, {
+    int page = 1,
+    int limit = 5,
+  }) async {
+    final res = await _api.get(
+      ApiEndpoints.workerReviews(workerId),
+      query: {'page': page, 'limit': limit},
+    );
+    if (res['success'] != true) {
+      throw ApiException(res['message']?.toString() ?? 'Failed to load reviews');
+    }
+    final list = res['reviews'] ?? res['data'];
+    final reviews = list is List
+        ? list.whereType<Map>().map(_mapReview).toList()
+        : <WorkerReview>[];
+    final total = (res['total'] as num?)?.toInt() ?? reviews.length;
+    final hasMore = res['hasMore'] == true || (page * limit < total);
+    return ReviewsPage(
+      reviews: reviews,
+      hasMore: hasMore,
+      page: page,
+      total: total,
     );
   }
 
   static WorkerReview _mapReview(Map review) {
     final reviewer = review['reviewer'] ?? review['customer'];
     final reviewerMap = reviewer is Map ? reviewer : const <String, dynamic>{};
+    final rawPhotos = review['photos'] ?? review['workPhotos'] ?? review['images'];
+    final photos = <String>[];
+    if (rawPhotos is List) {
+      for (final p in rawPhotos) {
+        if (p is String && p.trim().isNotEmpty) photos.add(p.trim());
+      }
+    }
+    final rawBadges =
+        review['badgesGiven'] ?? review['badges'] ?? review['traits'];
+    final badges = <String>[];
+    if (rawBadges is List) {
+      for (final b in rawBadges) {
+        if (b is String && b.trim().isNotEmpty) badges.add(b.trim());
+      }
+    } else if (rawBadges is String && rawBadges.trim().isNotEmpty) {
+      badges.addAll(
+        rawBadges.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty),
+      );
+    }
+    final avatar = (review['avatar'] ??
+            review['avatarUrl'] ??
+            review['reviewerAvatar'] ??
+            reviewerMap['avatar'])
+        ?.toString();
+
     return WorkerReview(
+      id: (review['_id'] ?? review['id'])?.toString(),
+      bookingId: (review['bookingId'] ?? review['booking'])?.toString(),
       reviewerName:
           (review['reviewerName'] ??
                   review['customerName'] ??
@@ -310,23 +568,52 @@ class WorkersApiRepository {
                   'Customer')
               .toString(),
       rating: (review['rating'] as num?)?.toDouble() ?? 0,
-      comment: (review['comment'] ?? review['text'] ?? review['review'] ?? '')
+      comment: (review['comment'] ??
+              review['feedback'] ??
+              review['description'] ??
+              review['text'] ??
+              review['review'] ??
+              '')
           .toString(),
       createdAt: DateTime.tryParse(
         (review['createdAt'] ?? review['date'] ?? '').toString(),
       ),
+      avatarUrl: avatar,
+      photos: photos,
+      badgesGiven: badges,
     );
   }
 }
+
+class ReviewsPage {
+  const ReviewsPage({
+    required this.reviews,
+    required this.hasMore,
+    required this.page,
+    required this.total,
+  });
+
+  final List<WorkerReview> reviews;
+  final bool hasMore;
+  final int page;
+  final int total;
+}
+
 
 class WorkersPage {
   const WorkersPage({
     required this.workers,
     required this.hasMore,
     required this.nextOffset,
+    this.code,
+    this.message,
+    this.searchRadiusKm,
   });
 
   final List<WorkerProfile> workers;
   final bool hasMore;
   final int nextOffset;
+  final String? code;
+  final String? message;
+  final int? searchRadiusKm;
 }

@@ -53,6 +53,15 @@ const templates = {
         action: 'booking_tracking',
         channel: 'MULTI',
     },
+    WORKER_ON_THE_WAY: {
+        en: { title: 'Worker is on the way', body: 'Your Fixly worker started navigation and is coming to you. Open Track to follow live.' },
+        hi: { title: 'कार्यकर्ता रास्ते में हैं', body: 'आपके Fixly कार्यकर्ता ने नेविगेशन शुरू कर दिया है और आपके पास आ रहे हैं। लाइव ट्रैक खोलें।' },
+        category: 'BOOKING',
+        priority: 'HIGH',
+        entityType: 'booking',
+        action: 'booking_tracking',
+        channel: 'MULTI',
+    },
     JOB_STARTED: {
         en: { title: 'Job started', body: 'Work on your booking has started.' },
         hi: { title: 'काम शुरू हुआ', body: 'आपकी बुकिंग पर काम शुरू हो गया है।' },

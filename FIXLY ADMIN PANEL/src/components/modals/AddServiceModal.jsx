@@ -1,26 +1,81 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from '../common/Modal';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import { Upload, CheckCircle2 } from 'lucide-react';
 
-export default function AddServiceModal({ isOpen, onClose }) {
-  const { addService } = useApp();
+import { OFFICIAL_CATEGORIES, getMergedCategories, normalizeCategory, toTitleCase } from '../../data/services';
 
-  const [formData, setFormData] = useState({
-    name: '',
-    category: 'Plumbing',
-    description: '',
-    basePrice: '₹350',
-    image: '',
-    requiredSkills: '',
-    availability: '24/7 Available',
-    emergencyAvailable: true,
-    status: 'Active',
-  });
+const DEFAULT_FORM_DATA = {
+  name: '',
+  category: 'Plumber',
+  description: '',
+  basePrice: '₹350',
+  image: '',
+  requiredSkills: '',
+  availability: '24/7 Available',
+  emergencyAvailable: true,
+  status: 'Active',
+};
 
+export default function AddServiceModal({ isOpen, onClose, serviceToEdit = null }) {
+  const { addService, updateService, services } = useApp();
+
+  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const categoryOptions = React.useMemo(() => {
+    return getMergedCategories(services);
+  }, [services]);
+
+  const resetForm = () => {
+    setFormData(DEFAULT_FORM_DATA);
+    setIsCustomCategory(false);
+    setCustomCategory('');
+    setUploadingImage(false);
+    setErrors({});
+  };
+
+  // Reset form when modal opens afresh or when switching between add and edit
+  useEffect(() => {
+    if (isOpen) {
+      if (serviceToEdit) {
+        const cat = normalizeCategory(serviceToEdit.category || 'Plumber');
+        const isKnown = categoryOptions.includes(cat);
+        setFormData({
+          name: toTitleCase(serviceToEdit.title || serviceToEdit.name || ''),
+          category: isKnown ? cat : 'Plumber',
+          description: serviceToEdit.description || (Array.isArray(serviceToEdit.whatsIncluded) ? serviceToEdit.whatsIncluded.join(', ') : ''),
+          basePrice: serviceToEdit.basePrice ? (String(serviceToEdit.basePrice).startsWith('₹') ? String(serviceToEdit.basePrice) : `₹${serviceToEdit.basePrice}`) : '₹350',
+          image: serviceToEdit.image || serviceToEdit.icon || '',
+          requiredSkills: serviceToEdit.requiredSkills || '',
+          availability: serviceToEdit.availability || '24/7 Available',
+          emergencyAvailable: serviceToEdit.emergencyAvailable ?? true,
+          status: serviceToEdit.isActive === false ? 'Inactive' : 'Active',
+        });
+        if (!isKnown && cat) {
+          setIsCustomCategory(true);
+          setCustomCategory(cat);
+        } else {
+          setIsCustomCategory(false);
+          setCustomCategory('');
+        }
+      } else {
+        // Brand new creation -> strictly reset to clean defaults
+        resetForm();
+      }
+      setErrors({});
+      setUploadingImage(false);
+    }
+  }, [isOpen, serviceToEdit]);
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -50,8 +105,9 @@ export default function AddServiceModal({ isOpen, onClose }) {
 
   const validate = () => {
     const errs = {};
+    const effectiveCategory = isCustomCategory ? customCategory.trim() : formData.category?.trim();
     if (!formData.name.trim()) errs.name = 'Service title is required';
-    if (!formData.category || !formData.category.trim()) errs.category = 'Service category is required';
+    if (!effectiveCategory) errs.category = 'Service category is required';
     if (!formData.description.trim()) errs.description = 'Description is required';
     if (!formData.basePrice.trim() || parseInt(formData.basePrice.replace(/\D/g, ''), 10) <= 0) {
       errs.basePrice = 'Valid base rate is required';
@@ -67,33 +123,49 @@ export default function AddServiceModal({ isOpen, onClose }) {
     e.preventDefault();
     if (!validate()) return;
 
+    const rawCat = isCustomCategory ? customCategory.trim() : formData.category?.trim();
+    const effectiveCategory = (rawCat || '').toLowerCase().trim();
+
+    const rawTitle = formData.name.trim();
+    const effectiveTitle = rawTitle.toLowerCase();
+
     try {
-      await addService({
-        title: formData.name,
-        category: formData.category || 'Plumbing',
+      const payload = {
+        title: effectiveTitle,
+        name: effectiveTitle,
+        category: effectiveCategory,
         image: formData.image || '',
         basePrice: parseInt(formData.basePrice.replace(/\D/g, ''), 10) || 100,
         estimatedTime: '1 Hour',
         whatsIncluded: formData.description ? [formData.description] : ['Professional Service'],
         isActive: formData.status === 'Active'
-      });
+      };
+
+      if (serviceToEdit) {
+        await updateService(serviceToEdit.id || serviceToEdit._id, payload);
+      } else {
+        await addService(payload);
+      }
+
+      // Complete reset on success
+      resetForm();
       onClose();
     } catch (err) {
-      console.error('Failed to add service modal:', err);
+      console.error('Failed to submit service modal:', err);
     }
   };
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
-      title="Add New Cooperative Service"
-      subtitle="Define rate cards, skill prerequisites, and emergency availability"
+      onClose={handleClose}
+      title={serviceToEdit ? 'Edit Cooperative Service' : 'Add New Cooperative Service'}
+      subtitle={serviceToEdit ? 'Update rate cards, details, and emergency availability' : 'Define rate cards, skill prerequisites, and emergency availability'}
       maxWidth="560px"
       footer={
         <>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             style={{
               padding: '8px 16px',
               borderRadius: '8px',
@@ -116,7 +188,7 @@ export default function AddServiceModal({ isOpen, onClose }) {
               fontWeight: '600',
             }}
           >
-            Publish to Catalog
+            {serviceToEdit ? 'Save Changes' : 'Publish to Catalog'}
           </button>
         </>
       }
@@ -127,6 +199,7 @@ export default function AddServiceModal({ isOpen, onClose }) {
             Service Title *
           </label>
           <input
+
             type="text"
             placeholder="e.g. Geyser Repair & Thermostat Installation"
             value={formData.name}
@@ -144,32 +217,68 @@ export default function AddServiceModal({ isOpen, onClose }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155', display: 'block', marginBottom: '4px' }}>
-              Service Category *
-            </label>
-            <select
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '13px',
-                backgroundColor: '#ffffff',
-              }}
-            >
-              <option value="Plumbing">Plumbing</option>
-              <option value="Electrical">Electrical</option>
-              <option value="Carpentry">Carpentry</option>
-              <option value="Cleaning">Cleaning</option>
-              <option value="AC Repair">AC Repair</option>
-              <option value="Painting">Painting</option>
-              <option value="Caregiving">Caregiving</option>
-              <option value="Driving">Driving</option>
-              <option value="Domestic Help">Domestic Help</option>
-              <option value="Technician">Technician</option>
-            </select>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                Service Category *
+              </label>
+              {isCustomCategory ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomCategory(false);
+                    setCustomCategory('');
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  ← Select Existing
+                </button>
+              ) : null}
+            </div>
+
+            {isCustomCategory ? (
+              <input
+                type="text"
+                placeholder="Type new category name (e.g. Gardening)..."
+                value={customCategory}
+                onChange={(e) => {
+                  setCustomCategory(e.target.value);
+                  setErrors((prev) => ({ ...prev, category: undefined }));
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${errors.category ? '#ef4444' : '#0284c7'}`,
+                  fontSize: '13px',
+                  backgroundColor: '#f0f9ff',
+                }}
+              />
+            ) : (
+              <select
+                value={formData.category}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') {
+                    setIsCustomCategory(true);
+                  } else {
+                    setFormData({ ...formData, category: e.target.value });
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${errors.category ? '#ef4444' : '#cbd5e1'}`,
+                  fontSize: '13px',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                {categoryOptions.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+                <option value="__custom__" style={{ fontWeight: '700', color: '#0284c7' }}>+ Add New / Custom Category...</option>
+              </select>
+            )}
+            {errors.category && <span style={{ fontSize: '11px', color: '#ef4444' }}>{errors.category}</span>}
           </div>
 
           <div>

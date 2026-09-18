@@ -107,6 +107,7 @@ export default function Header({ onOpenMobileMenu }) {
 
   return (
     <header
+      className="admin-header"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -138,6 +139,7 @@ export default function Header({ onOpenMobileMenu }) {
 
         <div>
           <h1
+            className="admin-header-title"
             style={{
               fontSize: '23px',
               fontWeight: '700',
@@ -155,6 +157,7 @@ export default function Header({ onOpenMobileMenu }) {
 
       {/* Right Controls */}
       <div
+        className="admin-header-controls"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -163,8 +166,9 @@ export default function Header({ onOpenMobileMenu }) {
         }}
       >
         {/* Working Global Search Input with instant dropdown */}
-        <div style={{ position: 'relative' }}>
+        <div className="admin-search-container" style={{ position: 'relative' }}>
           <div
+            className="admin-search-box"
             style={{
               display: 'flex',
               alignItems: 'center',

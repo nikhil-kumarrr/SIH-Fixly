@@ -37,6 +37,7 @@ import {
   Database
 } from 'lucide-react';
 import Avatar from '../../components/common/Avatar';
+import StateDistrictSelect from '../../components/common/StateDistrictSelect';
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -204,6 +205,8 @@ export default function SettingsPage() {
   const [societies, setSocieties] = useState([]);
   const [loadingSocieties, setLoadingSocieties] = useState(false);
   const [societySearch, setSocietySearch] = useState('');
+  const [societyFilterState, setSocietyFilterState] = useState('');
+  const [societyFilterDistrict, setSocietyFilterDistrict] = useState('');
   const [showAddSocietyModal, setShowAddSocietyModal] = useState(false);
   const [showAssignWorkerModal, setShowAssignWorkerModal] = useState(false);
   const [selectedSocietyForAssign, setSelectedSocietyForAssign] = useState(null);
@@ -241,8 +244,11 @@ export default function SettingsPage() {
     description: '',
     category: 'all',
     targetUserRole: 'all',
+    targetUserEmails: '',
     minOrderValue: 299,
     maxDiscount: 200,
+    usageLimit: 0,
+    validUntil: '',
     gradientStart: '#1E3A8A',
     gradientEnd: '#3B82F6',
     priority: 5,
@@ -333,10 +339,19 @@ export default function SettingsPage() {
   };
 
   // Fetch Societies list
-  const fetchSocieties = async () => {
+  const fetchSocieties = async (customFilters = {}) => {
     try {
       setLoadingSocieties(true);
-      const res = await api.getSocieties({ search: societySearch });
+      const params = {};
+      const querySearch = customFilters.search !== undefined ? customFilters.search : societySearch;
+      const queryState = customFilters.state !== undefined ? customFilters.state : societyFilterState;
+      const queryDistrict = customFilters.district !== undefined ? customFilters.district : societyFilterDistrict;
+
+      if (querySearch && querySearch.trim()) params.search = querySearch.trim();
+      if (queryState && queryState.trim()) params.state = queryState.trim();
+      if (queryDistrict && queryDistrict.trim()) params.district = queryDistrict.trim();
+
+      const res = await api.getSocieties(params);
       if (res && (res.societies || res.data)) {
         setSocieties(res.societies || res.data || []);
       }
@@ -451,8 +466,11 @@ export default function SettingsPage() {
         gradient: [newBanner.gradientStart, newBanner.gradientEnd],
         category: newBanner.category,
         targetUserRole: newBanner.targetUserRole,
+        targetUserEmails: newBanner.targetUserEmails,
         minOrderValue: Number(newBanner.minOrderValue) || 0,
         maxDiscount: Number(newBanner.maxDiscount) || 500,
+        usageLimit: Number(newBanner.usageLimit) || 0,
+        validUntil: newBanner.validUntil || undefined,
         priority: Number(newBanner.priority) || 0,
         isActive: Boolean(newBanner.isActive),
         notifyUsers: Boolean(newBanner.notifyUsers)
@@ -462,6 +480,26 @@ export default function SettingsPage() {
       if (res && res.success) {
         showToast('success', `Coupon banner '${newBanner.code}' created successfully!`);
         setShowAddBannerModal(false);
+        setNewBanner({
+          title: '',
+          code: '',
+          discount: '',
+          discountPercent: 20,
+          discountAmount: 0,
+          description: '',
+          category: 'all',
+          targetUserRole: 'all',
+          targetUserEmails: '',
+          minOrderValue: 299,
+          maxDiscount: 200,
+          usageLimit: 0,
+          validUntil: '',
+          gradientStart: '#1E3A8A',
+          gradientEnd: '#3B82F6',
+          priority: 5,
+          isActive: true,
+          notifyUsers: true
+        });
         fetchBanners();
       }
     } catch (err) {
@@ -699,10 +737,10 @@ export default function SettingsPage() {
             {/* 4. Worker Search & Dispatch Radius */}
             <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
               <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                Worker Search Radius (km)
+                Service & Worker Search Radius (km)
               </label>
               <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                Maximum geographic perimeter in kilometers to locate and notify available cooperative workers.
+                Maximum geographic perimeter in kilometers to locate workers and dispatch service requests.
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input
@@ -720,21 +758,21 @@ export default function SettingsPage() {
             {/* 5. Default Labor Rate Floor */}
             <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
               <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                Default Base Labor Rate Floor (₹ / hr)
+                Default Base Labor Rate Floor (₹ / booking)
               </label>
               <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                Minimum legal fallback hourly wage floor for service estimates.
+                Minimum fallback base wage floor per service booking estimate.
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '16px', fontWeight: '700', color: '#0f172a' }}>₹</span>
                 <input
                   type="number"
-                  min="100"
+                  min="50"
                   value={platformForm.defaultLaborRatePerHour}
                   onChange={(e) => setPlatformForm({ ...platformForm, defaultLaborRatePerHour: Number(e.target.value) || 350 })}
                   style={{ width: '120px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: '700' }}
                 />
-                <span style={{ fontSize: '13px', color: '#64748b' }}>/ hour</span>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>/ booking</span>
               </div>
             </div>
 
@@ -1426,8 +1464,8 @@ export default function SettingsPage() {
       {activeTab === 'societies' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ position: 'relative', width: '280px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+              <div style={{ position: 'relative', width: '220px' }}>
                 <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: '10px', top: '10px' }} />
                 <input
                   type="text"
@@ -1438,13 +1476,48 @@ export default function SettingsPage() {
                   style={{ width: '100%', padding: '8px 10px 8px 32px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                 />
               </div>
+
+              <div style={{ width: '320px' }}>
+                <StateDistrictSelect
+                  isFilter={true}
+                  showLabels={false}
+                  selectedState={societyFilterState}
+                  selectedDistrict={societyFilterDistrict}
+                  onStateChange={(st) => {
+                    setSocietyFilterState(st);
+                    setSocietyFilterDistrict('');
+                    fetchSocieties({ state: st, district: '' });
+                  }}
+                  onDistrictChange={(dist) => {
+                    setSocietyFilterDistrict(dist);
+                    fetchSocieties({ district: dist });
+                  }}
+                  fieldStyle={{ padding: '8px 10px', fontSize: '12.5px' }}
+                />
+              </div>
+
               <button
                 type="button"
-                onClick={fetchSocieties}
+                onClick={() => fetchSocieties()}
                 style={{ padding: '8px 14px', backgroundColor: '#f1f5f9', color: '#334155', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
               >
                 Filter
               </button>
+
+              {(societySearch || societyFilterState || societyFilterDistrict) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSocietySearch('');
+                    setSocietyFilterState('');
+                    setSocietyFilterDistrict('');
+                    fetchSocieties({ search: '', state: '', district: '' });
+                  }}
+                  style={{ padding: '8px 12px', backgroundColor: '#ffffff', color: '#64748b', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Reset
+                </button>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -1597,30 +1670,12 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>State *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Delhi"
-                        value={newSociety.state}
-                        onChange={(e) => setNewSociety({ ...newSociety, state: e.target.value })}
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>District *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. South Delhi"
-                        value={newSociety.district}
-                        onChange={(e) => setNewSociety({ ...newSociety, district: e.target.value })}
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                    </div>
-                  </div>
+                  <StateDistrictSelect
+                    selectedState={newSociety.state}
+                    selectedDistrict={newSociety.district}
+                    onStateChange={(st) => setNewSociety({ ...newSociety, state: st, district: '' })}
+                    onDistrictChange={(dist) => setNewSociety({ ...newSociety, district: dist })}
+                  />
 
                   <div>
                     <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>Ward or Area Coverage</label>
@@ -1847,12 +1902,46 @@ export default function SettingsPage() {
                           </div>
                         </div>
                       </div>
+                      {(b.targetUserEmails?.length > 0 || b.targetUserIds?.length > 0) && (
+                        <div style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 600 }}>
+                          User-specific · {b.targetUserIds?.length || b.targetUserEmails?.length} user(s) assigned
+                        </div>
+                      )}
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        Role: {b.targetUserRole || 'all'} · Used: {b.usedCount || 0}
+                        {b.usageLimit ? ` / ${b.usageLimit}` : ''}
+                        {b.usedByUserIds?.length > 0 ? ` · Locked: ${b.usedByUserIds.length}` : ''}
+                      </div>
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
                         <span style={{ fontSize: '11.5px', color: b.isActive ? '#15803d' : '#94a3b8', fontWeight: '700' }}>
                           {b.isActive ? '● Active in App' : '○ Inactive'}
                         </span>
-                        <button
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const emails = window.prompt(
+                                'Re-assign coupon to users (comma-separated emails).\nClears lock so they can use again:',
+                                (b.targetUserEmails || []).join(', ')
+                              );
+                              if (emails === null) return;
+                              try {
+                                await api.updateBanner(b._id, { targetUserEmails: emails });
+                                showToast('success', `Coupon ${b.code} re-assigned`);
+                                fetchBanners();
+                              } catch (err) {
+                                showToast('error', err.response?.data?.message || 'Re-assign failed');
+                              }
+                            }}
+                            style={{
+                              background: 'none', border: 'none', color: '#0369a1',
+                              fontSize: '12px', fontWeight: '700', cursor: 'pointer'
+                            }}
+                          >
+                            Re-assign
+                          </button>
+                          <button
                           type="button"
                           onClick={() => handleDeleteBanner(b._id, b.code)}
                           style={{
@@ -1864,6 +1953,7 @@ export default function SettingsPage() {
                           <Trash2 size={13} />
                           <span>Delete</span>
                         </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1945,6 +2035,7 @@ export default function SettingsPage() {
                         <option value="all">All Users (Customers & Workers)</option>
                         <option value="customer">Customers Only</option>
                         <option value="worker">Workers Only</option>
+                        <option value="new_user">New Customers (≤30 days)</option>
                       </select>
                     </div>
                     <div>
@@ -1962,6 +2053,66 @@ export default function SettingsPage() {
                         <option value="carpenter">Carpentry</option>
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
+                      Specific users (emails, optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="user1@email.com, user2@email.com — leave empty for filter-based"
+                      value={newBanner.targetUserEmails}
+                      onChange={(e) => setNewBanner({ ...newBanner, targetUserEmails: e.target.value })}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                    />
+                    <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
+                      If set, only these users can use the coupon. After they redeem once, access is locked until you Re-assign or create a new code.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>% Discount</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={newBanner.discountPercent}
+                        onChange={(e) => setNewBanner({ ...newBanner, discountPercent: Number(e.target.value) || 0 })}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>Flat ₹ Discount</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={newBanner.discountAmount}
+                        onChange={(e) => setNewBanner({ ...newBanner, discountAmount: Number(e.target.value) || 0 })}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>Usage limit (0=∞)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={newBanner.usageLimit}
+                        onChange={(e) => setNewBanner({ ...newBanner, usageLimit: Number(e.target.value) || 0 })}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>Valid until</label>
+                    <input
+                      type="date"
+                      value={newBanner.validUntil}
+                      onChange={(e) => setNewBanner({ ...newBanner, validUntil: e.target.value })}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                    />
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

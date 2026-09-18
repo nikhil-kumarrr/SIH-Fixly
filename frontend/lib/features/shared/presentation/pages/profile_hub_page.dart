@@ -75,6 +75,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
                   phone: state.phone,
                   email: state.email,
                   insured: state.insured,
+                  locationLabel: state.locationSummary,
                   roleLabel: l10n.customerMember,
                   onEditTap: () async {
                     await context.push(RouteNames.sharedEditProfile);
@@ -207,6 +208,7 @@ class _ProfileHeroCard extends StatelessWidget {
     required this.phone,
     required this.email,
     required this.insured,
+    required this.locationLabel,
     required this.roleLabel,
     required this.onEditTap,
   });
@@ -215,6 +217,7 @@ class _ProfileHeroCard extends StatelessWidget {
   final String phone;
   final String email;
   final bool insured;
+  final String locationLabel;
   final String roleLabel;
   final VoidCallback onEditTap;
 
@@ -306,6 +309,29 @@ class _ProfileHeroCard extends StatelessWidget {
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: Colors.white.withValues(alpha: 0.75),
                         ),
+                      ),
+                    ],
+                    if (locationLabel.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_outlined,
+                            size: 14,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              locationLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],

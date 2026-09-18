@@ -73,7 +73,10 @@ class _WorkerPayoutPageState extends State<WorkerPayoutPage> {
     final cubit = context.read<WorkerOnboardingCubit>();
     final error = await cubit.verifyBankAccount();
     if (!mounted) return;
-    ToastUtils.showError(context: context, message: error ?? 'Bank account verified successfully');
+    // Success: green "verified" label under field — no toast.
+    if (error != null) {
+      ToastUtils.showError(context: context, message: error);
+    }
   }
 
   Future<void> _verifyUpi() async {
@@ -83,7 +86,10 @@ class _WorkerPayoutPageState extends State<WorkerPayoutPage> {
 
     final error = await cubit.verifyUpiId();
     if (!mounted) return;
-    ToastUtils.showError(context: context, message: error ?? 'UPI ID verified successfully');
+    // Success: green "UPI ID verified" under field — no toast.
+    if (error != null) {
+      ToastUtils.showError(context: context, message: error);
+    }
   }
 
   Future<void> _submit() async {

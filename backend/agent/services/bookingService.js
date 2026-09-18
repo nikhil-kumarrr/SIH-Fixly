@@ -99,6 +99,9 @@ export const createBookingInDB = async ({
 
     const resultBooking = populated || newBooking.toObject();
     if (resultBooking && resultBooking.worker && typeof resultBooking.worker === 'object') {
+        // AI chat must never receive worker phone — in-app WebRTC only.
+        const { phone, ...workerSafe } = resultBooking.worker;
+        resultBooking.worker = workerSafe;
         resultBooking.worker.toString = function() {
             return String(this._id);
         };

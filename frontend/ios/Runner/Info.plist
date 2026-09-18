@@ -68,7 +68,7 @@
 		<key>NSPhotoLibraryAddUsageDescription</key>
 		<string>Fixly may save captured KYC photos to your library when needed.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>Fixly needs microphone access for Hey Flexi voice assistant and calling workers.</string>
+		<string>Fixly needs microphone access for Hey Fixly voice assistant and calling workers.</string>
 		<key>NSSpeechRecognitionUsageDescription</key>
 		<string>Fixly needs speech recognition access to convert your voice to text for booking services.</string>
 		<key>MBXAccessToken</key>

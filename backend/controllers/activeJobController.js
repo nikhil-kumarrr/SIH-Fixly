@@ -3,6 +3,13 @@ import User from '../models/User.js';
 import redis from '../config/redis.js';
 import { notifyUser, safeNotify } from '../services/notificationService.js';
 import { getTargetBookingRooms } from '../sockets/tracking.js';
+import { buildBookingQuery } from './webrtcCallController.js';
+
+const assignedWorkerId = (worker) => {
+    if (!worker) return null;
+    if (typeof worker === 'object' && worker._id != null) return String(worker._id);
+    return String(worker);
+};
 
 // 1. Worker Accepts Booking Request (transitions SEARCHING -> ACCEPTED with Distributed Lock & Concurrency Control)
 export const acceptBooking = async (req, res) => {
@@ -236,18 +243,36 @@ export const addExtraParts = async (req, res) => {
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
         const items = Array.isArray(extraItems) ? extraItems : [];
+        const normalized = items.map((item) => {
+            const qty = Math.max(1, Number(item.quantity) || 1);
+            const unit = item.unitPrice != null ? Number(item.unitPrice) : null;
+            const line = unit != null && !Number.isNaN(unit)
+                ? unit * qty
+                : (Number(item.price) || 0);
+            return {
+                title: String(item.title || 'Part').trim() || 'Part',
+                price: line,
+                unitPrice: unit != null && !Number.isNaN(unit) ? unit : line / qty,
+                quantity: qty,
+            };
+        });
         // Final billing uses replace:true so re-submits do not stack duplicates.
         booking.addOns = replace
-            ? items
-            : [...(booking.addOns || []), ...items];
+            ? normalized
+            : [...(booking.addOns || []), ...normalized];
 
-        // Recalculate extraPartsTotal and totalAmount
+        // Recalculate extras + keep service charge from rough estimation.
         booking.invoice = booking.invoice || {};
-        const extraPartsTotal = booking.addOns.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+        const extraPartsTotal = booking.addOns.reduce(
+            (sum, item) => sum + (Number(item.price) || 0),
+            0,
+        );
+        const serviceCharge = Number(booking.workerEstimation?.serviceCharge) || 0;
         booking.invoice.extraPartsTotal = extraPartsTotal;
         booking.invoice.totalAmount =
             (Number(booking.invoice.baseServiceFee) || 0) +
             extraPartsTotal +
+            serviceCharge +
             (Number(booking.invoice.platformFee) || 0) +
             (Number(booking.invoice.urgentFee) || 0);
 
@@ -291,10 +316,42 @@ export const completeJob = async (req, res) => {
         const booking = await Booking.findById(bookingId);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
+        // Idempotent: already awaiting payment — do not re-run billing side effects.
+        if (booking.status === 'PAYMENT_PENDING' && booking.invoice?.paymentStatus !== 'PAID') {
+            return res.status(200).json({
+                success: true,
+                status: 'PAYMENT_PENDING',
+                message: 'Already awaiting customer payment.',
+                booking,
+            });
+        }
+
+        if (booking.status === 'COMPLETED' || booking.invoice?.paymentStatus === 'PAID') {
+            return res.status(200).json({
+                success: true,
+                status: 'COMPLETED',
+                message: 'Job already completed.',
+                booking,
+            });
+        }
+
         booking.invoice = booking.invoice || {};
-        const extraPartsTotal = (booking.addOns || []).reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+        const addOnsTotal = (booking.addOns || []).reduce(
+            (sum, item) => sum + (Number(item.price) || 0),
+            0,
+        );
+        const estParts = Number(booking.workerEstimation?.partsEstimate) || 0;
+        const serviceCharge = Number(booking.workerEstimation?.serviceCharge) || 0;
+        // If worker submitted final parts, use those; else keep rough-estimate parts.
+        const extraPartsTotal =
+            (booking.addOns || []).length > 0 ? addOnsTotal : (estParts || Number(booking.invoice.extraPartsTotal) || 0);
         booking.invoice.extraPartsTotal = extraPartsTotal;
-        booking.invoice.totalAmount = (booking.invoice.baseServiceFee || 0) + extraPartsTotal + (booking.invoice.platformFee || 0) + (booking.invoice.urgentFee || 0);
+        booking.invoice.totalAmount =
+            (Number(booking.invoice.baseServiceFee) || 0) +
+            extraPartsTotal +
+            serviceCharge +
+            (Number(booking.invoice.platformFee) || 0) +
+            (Number(booking.invoice.urgentFee) || 0);
         // Worker "request payment" = work done. Unlock customer checkout without a second OTP gate.
         booking.completionOtpVerified = true;
         await booking.save();
@@ -431,22 +488,64 @@ export const verifyCompletionOtp = async (req, res) => {
 export const startNavigation = async (req, res) => {
     try {
         const { bookingId } = req.params;
-        const booking = await Booking.findById(bookingId);
-        
+        const query = buildBookingQuery(bookingId);
+        if (!query) {
+            return res.status(400).json({ success: false, message: 'Invalid booking id' });
+        }
+
+        const booking = await Booking.findOne(query);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        
-        if (String(booking.worker) !== String(req.user.id)) {
+
+        const workerId = assignedWorkerId(booking.worker);
+        if (!workerId || workerId !== String(req.user.id)) {
             return res.status(403).json({ success: false, message: 'Only assigned worker can start navigation' });
         }
-        
-        if (!['ACCEPTED', 'APPROVED'].includes(booking.status)) {
-            return res.status(400).json({ success: false, message: 'Cannot start navigation unless booking is accepted' });
+
+        if (!['ACCEPTED', 'APPROVED', 'EN_ROUTE', 'ASSIGNED', 'ARRIVED'].includes(booking.status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot start navigation for status ${booking.status}`,
+            });
         }
-        
-        booking.workerNavigationStartedAt = new Date();
-        await booking.save();
-        
-        return res.status(200).json({ success: true, message: 'Navigation started', booking });
+
+        const alreadyStarted = !!booking.workerNavigationStartedAt;
+        if (!alreadyStarted) {
+            booking.workerNavigationStartedAt = new Date();
+            await booking.save();
+
+            safeNotify(() => notifyUser({
+                recipient: booking.customer,
+                eventType: 'WORKER_ON_THE_WAY',
+                entityId: booking._id,
+                bookingId: booking._id,
+                dedupeKey: `WORKER_ON_THE_WAY:${booking._id}`,
+            }));
+        }
+
+        const io = req.app.get('io');
+        if (io) {
+            const customerId = String(booking.customer);
+            const targetRooms = [
+                ...getTargetBookingRooms(String(booking._id)),
+                ...getTargetBookingRooms(booking.bookingId),
+                `user_${customerId}`,
+                `customer_${customerId}`,
+            ];
+            io.to(targetRooms).emit('booking_status_update', {
+                bookingId: String(booking._id),
+                canonicalBookingId: booking.bookingId,
+                status: booking.status,
+                workerNavigationStarted: true,
+                workerNavigationStartedAt: booking.workerNavigationStartedAt,
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Navigation started',
+            workerNavigationStartedAt: booking.workerNavigationStartedAt,
+            booking,
+        });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
@@ -456,49 +555,53 @@ export const submitPriceEstimation = async (req, res) => {
     try {
         const { bookingId } = req.params;
         const body = req.body || {};
-        // Accept both API field shapes used by app / docs.
-        const laborCost = body.laborCost ?? body.estimatedLaborCost;
+        // Parts + optional service charge only — never rewrite booked base price.
         const partsEstimate = body.partsEstimate ?? body.estimatedPartsCost;
         const serviceCharge = body.serviceCharge;
         const notes = body.notes;
-        
+
         const booking = await Booking.findById(bookingId);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        
+
         if (String(booking.worker) !== String(req.user.id)) {
             return res.status(403).json({ success: false, message: 'Only assigned worker can submit estimation' });
         }
-        
+
         if (booking.status !== 'ARRIVED') {
             return res.status(400).json({ success: false, message: 'Cannot submit estimation unless status is ARRIVED' });
         }
-        
-        const estimatedTotal = (Number(laborCost) || 0) + (Number(partsEstimate) || 0) + (Number(serviceCharge) || 0);
-        
+
+        booking.invoice = booking.invoice || {};
+
+        // Freeze the agreed base — ignore any laborCost from client.
+        const lockedBaseFee = Number(booking.invoice.baseServiceFee) || 0;
+        const estimatedParts = Math.max(0, Number(partsEstimate) || 0);
+        const estimatedServiceCharge = Math.max(0, Number(serviceCharge) || 0);
+        const platformFee = Number(booking.invoice.platformFee) || 0;
+        const urgentFee = Number(booking.invoice.urgentFee) || 0;
+        const estimatedTotal = lockedBaseFee + estimatedParts + estimatedServiceCharge;
+
         booking.workerEstimation = {
             estimatedTotal,
-            laborCost: Number(laborCost) || 0,
-            partsEstimate: Number(partsEstimate) || 0,
-            serviceCharge: Number(serviceCharge) || 0,
-            notes,
-            submittedAt: new Date()
+            lockedBaseFee,
+            laborCost: 0,
+            partsEstimate: estimatedParts,
+            serviceCharge: estimatedServiceCharge,
+            notes: notes || null,
+            submittedAt: new Date(),
         };
-        // Surface estimate on invoice fields so customer review UI can show breakdown.
-        booking.invoice = booking.invoice || {};
-        booking.invoice.baseServiceFee = Number(laborCost) || 0;
-        booking.invoice.extraPartsTotal = Number(partsEstimate) || 0;
-        if (serviceCharge != null && serviceCharge !== '') {
-            booking.invoice.platformFee = Number(serviceCharge) || 0;
-        }
+
+        // Base + platform stay untouched; only parts + total update.
+        booking.invoice.baseServiceFee = lockedBaseFee;
+        booking.invoice.extraPartsTotal = estimatedParts;
         booking.invoice.totalAmount =
-            (Number(booking.invoice.baseServiceFee) || 0) +
-            (Number(booking.invoice.extraPartsTotal) || 0) +
-            (Number(booking.invoice.platformFee) || 0) +
-            (Number(booking.invoice.urgentFee) || 0);
+            lockedBaseFee + estimatedParts + estimatedServiceCharge + platformFee + urgentFee;
+        booking.markModified('invoice');
+        booking.markModified('workerEstimation');
         booking.status = 'ESTIMATION_GIVEN';
-        
+
         await booking.save();
-        
+
         const io = req.app.get('io');
         if (io) {
             const targetRooms = [
@@ -509,10 +612,10 @@ export const submitPriceEstimation = async (req, res) => {
                 bookingId: booking._id,
                 canonicalBookingId: booking.bookingId,
                 status: 'ESTIMATION_GIVEN',
-                estimation: booking.workerEstimation
+                estimation: booking.workerEstimation,
             });
         }
-        
+
         return res.status(200).json({
             success: true,
             message: 'Estimation submitted',

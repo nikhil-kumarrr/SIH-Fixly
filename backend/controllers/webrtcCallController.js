@@ -1,8 +1,12 @@
+import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
 import WebRTCCallLog from '../models/WebRTCCallLog.js';
 import redis from '../config/redis.js';
-import { sendIncomingCallPush } from '../services/webrtcCallPushService.js';
+import { sendIncomingCallPush, sendCancelCallPush } from '../services/webrtcCallPushService.js';
+import { getIO } from '../config/socket.js';
+import { getTargetCallRooms } from '../sockets/webrtcCallSocket.js';
+
 
 /**
  * Normalizes booking ID into a canonical Redis key (without leading '#').
@@ -178,6 +182,78 @@ export const initiateWebRTCCall = async (req, res) => {
 };
 
 /**
+ * Accepts an active WebRTC audio call session via HTTP REST API.
+ * Ensures 100% two-way connection even if socket event dropped across AWS ALB nodes.
+ * @route POST /api/webrtc/call/accept
+ */
+export const acceptWebRTCCall = async (req, res) => {
+    try {
+        const { bookingId } = req.body;
+        const currentUserId = String(req.user.id || req.user._id);
+
+        if (!bookingId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Booking ID is required to accept call'
+            });
+        }
+
+        const canonicalBookingId = getCanonicalBookingKey(bookingId);
+        const redisCallKey = `webrtc:call:${canonicalBookingId}`;
+        const rawCall = await redis.get(redisCallKey);
+        let callData = rawCall ? JSON.parse(rawCall) : {};
+
+        callData.status = 'CONNECTED';
+        callData.connectedAt = Date.now();
+        await redis.set(redisCallKey, JSON.stringify(callData), 'EX', 3600);
+
+        const bookingQuery = buildBookingQuery(bookingId);
+        let booking = null;
+        if (bookingQuery && mongoose.connection.readyState === 1) {
+            try {
+                booking = await Booking.findOne(bookingQuery).select('_id bookingId customer worker');
+            } catch (queryErr) {
+                console.warn('[WebRTC-API] Booking query warning on accept:', queryErr.message);
+            }
+        }
+
+        const customerId = booking ? String(booking.customer) : String(callData.callerId || '');
+        const workerId = booking ? String(booking.worker) : String(callData.receiverId || '');
+        const callerId = String(callData.callerId || (currentUserId === customerId ? workerId : customerId));
+
+        const targetRooms = getTargetCallRooms(booking?.bookingId || bookingId);
+        if (booking?._id) targetRooms.push(`webrtc_call_${booking._id}`);
+
+        const io = req.app.get('io') || getIO();
+        const acceptPayload = {
+            bookingId: booking?.bookingId || bookingId,
+            receiverId: currentUserId,
+            senderUserId: currentUserId,
+            timestamp: Date.now()
+        };
+
+        if (io) {
+            targetRooms.forEach((r) => io.to(r).emit('webrtc:call-accepted', acceptPayload));
+            if (callerId) io.to(`webrtc_user_${callerId}`).emit('webrtc:call-accepted', acceptPayload);
+            if (customerId) io.to(`webrtc_user_${customerId}`).emit('webrtc:call-accepted', acceptPayload);
+            if (workerId) io.to(`webrtc_user_${workerId}`).emit('webrtc:call-accepted', acceptPayload);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Call session accepted successfully',
+            callSession: callData
+        });
+    } catch (error) {
+        console.error('acceptWebRTCCall error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error while accepting call'
+        });
+    }
+};
+
+/**
  * Returns dynamic ICE servers (STUN + TURN credentials) for NAT traversal.
  * @route GET /api/webrtc/config/ice-servers
  */
@@ -186,17 +262,53 @@ export const getIceServers = async (req, res) => {
         const iceServers = [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+            { urls: 'stun:stun.services.mozilla.com' },
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            // Public high-availability TURN relay (Metered OpenRelay) for Symmetric NAT / 4G/5G mobile carriers
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelay',
+                credential: 'openrelay'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443',
+                username: 'openrelay',
+                credential: 'openrelay'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                username: 'openrelay',
+                credential: 'openrelay'
+            },
+            {
+                urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+                username: 'openrelay',
+                credential: 'openrelay'
+            },
+            {
+                urls: 'turns:openrelay.metered.ca:5349',
+                username: 'openrelay',
+                credential: 'openrelay'
+            },
+            {
+                urls: 'turns:openrelay.metered.ca:5349?transport=tcp',
+                username: 'openrelay',
+                credential: 'openrelay'
+            }
         ];
 
         // If custom TURN server is provided in environment variables (e.g. AWS coturn / Twilio)
         if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
-            iceServers.push({
+            iceServers.unshift({
                 urls: process.env.TURN_URL,
                 username: process.env.TURN_USERNAME,
                 credential: process.env.TURN_CREDENTIAL
             });
         }
+
 
         return res.status(200).json({
             success: true,
@@ -330,3 +442,114 @@ export const getCallHistory = async (req, res) => {
         });
     }
 };
+
+/**
+ * Terminates an active or ringing WebRTC audio call session via HTTP REST API.
+ * Ensures 100% two-way call termination even if socket signaling dropped or was in background.
+ * @route POST /api/webrtc/call/hangup
+ */
+export const hangupWebRTCCall = async (req, res) => {
+    try {
+        const { bookingId, endReason, durationSeconds } = req.body;
+        const currentUserId = String(req.user.id || req.user._id);
+
+        console.log(`[WebRTC-API] 🛑 Received POST /api/webrtc/call/hangup for booking: ${bookingId}, user: ${currentUserId}, reason: ${endReason || 'HANGUP'}`);
+
+        if (!bookingId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Booking ID is required to terminate call'
+            });
+        }
+
+        const canonicalBookingId = getCanonicalBookingKey(bookingId);
+        const redisCallKey = `webrtc:call:${canonicalBookingId}`;
+        const rawCall = await redis.get(redisCallKey);
+        await redis.del(redisCallKey);
+
+        let callData = rawCall ? JSON.parse(rawCall) : {};
+
+        // Safely resolve booking if DB connected
+        const bookingQuery = buildBookingQuery(bookingId);
+        let booking = null;
+        if (bookingQuery && mongoose.connection.readyState === 1) {
+            try {
+                booking = await Booking.findOne(bookingQuery).select('_id bookingId customer worker status');
+            } catch (queryErr) {
+                console.warn('[WebRTC-API] Booking query warning:', queryErr.message);
+            }
+        }
+
+        const customerId = booking ? String(booking.customer) : String(callData.callerId || '');
+        const workerId = booking ? String(booking.worker) : String(callData.receiverId || '');
+        const targetRooms = getTargetCallRooms(booking?.bookingId || bookingId);
+        if (booking?._id) {
+            targetRooms.push(`webrtc_call_${booking._id}`);
+        }
+
+        const io = req.app.get('io') || getIO();
+        const callEndedPayload = {
+            bookingId: booking?.bookingId || bookingId,
+            durationSeconds: durationSeconds || 0,
+            endReason: endReason || 'NORMAL_HANGUP',
+            endedBy: currentUserId,
+            timestamp: Date.now()
+        };
+
+        if (io) {
+            console.log(`[WebRTC-API] 📢 Emitting webrtc:call-ended to call rooms: [${targetRooms.join(', ')}] and user inboxes: [webrtc_user_${customerId}, webrtc_user_${workerId}]`);
+            // Emit to call room aliases
+            targetRooms.forEach((room) => io.to(room).emit('webrtc:call-ended', callEndedPayload));
+
+            // Emit to personal user inboxes for BOTH customer and worker
+            if (customerId) io.to(`webrtc_user_${customerId}`).emit('webrtc:call-ended', callEndedPayload);
+            if (workerId) io.to(`webrtc_user_${workerId}`).emit('webrtc:call-ended', callEndedPayload);
+        } else {
+            console.warn('[WebRTC-API] ⚠️ Socket.io instance not available during hangup emit');
+        }
+
+        // Send silent FCM push to cancel native incoming call ringtone on counterpart
+        const recipientUserId = (currentUserId === customerId) ? workerId : customerId;
+        if (recipientUserId) {
+            sendCancelCallPush({
+                recipientUserId,
+                bookingId: booking?.bookingId || bookingId,
+                callSessionId: callData.callSessionId
+            }).catch((err) => console.warn('[WebRTC-API] Push cancel error:', err.message));
+        }
+
+        // Persist call log if booking exists and DB connected
+        if (booking && mongoose.connection.readyState === 1) {
+            try {
+                await WebRTCCallLog.create({
+                    booking: booking._id,
+                    bookingId: booking.bookingId,
+                    caller: callData.callerId || (currentUserId === customerId ? customerId : workerId),
+                    receiver: callData.receiverId || (currentUserId === customerId ? workerId : customerId),
+                    callerRole: callData.callerRole || (currentUserId === customerId ? 'customer' : 'worker'),
+                    status: (durationSeconds && durationSeconds > 0) ? 'COMPLETED' : 'MISSED',
+                    durationSeconds: durationSeconds || 0,
+                    startedAt: callData.initiatedAt ? new Date(callData.initiatedAt) : new Date(),
+                    connectedAt: callData.connectedAt ? new Date(callData.connectedAt) : null,
+                    endedAt: new Date(),
+                    endReason: endReason || 'NORMAL_HANGUP'
+                });
+            } catch (logErr) {
+                console.warn('[WebRTC-API] Call log persistence warning:', logErr.message);
+            }
+        }
+
+
+        return res.status(200).json({
+            success: true,
+            message: 'Call session successfully terminated'
+        });
+    } catch (error) {
+        console.error('[WebRTC-API] ❌ hangupWebRTCCall error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error while hanging up call'
+        });
+    }
+};
+

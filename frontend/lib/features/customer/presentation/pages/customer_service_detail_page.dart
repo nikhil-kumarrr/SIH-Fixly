@@ -8,11 +8,13 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/router/route_names.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/constants/map_constants.dart';
 import '../../../../core/location/app_location.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../home/data/home_api_repository.dart';
+import '../../../shared/presentation/widgets/service_scope_widgets.dart';
 import '../../../workers/data/workers_api_repository.dart';
 import '../cubit/booking_flow_cubit.dart';
 
@@ -215,11 +217,15 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
                   _buildWorkersCarouselSection(context, service),
                   const SizedBox(height: 20),
 
-                  // 6. How Fixly Works
-                  _buildHowItWorksCard(context),
+                  // 6. How this specific service is done (category-aware)
+                  HowItsDoneCard(primaryCategoryId: service.categoryId),
                   const SizedBox(height: 16),
 
-                  // 7. Fixly Trust & Safety Assurances
+                  // 7. Category-specific FAQs
+                  ServiceFaqSection(primaryCategoryId: service.categoryId),
+                  const SizedBox(height: 16),
+
+                  // 8. Fixly Trust & Safety Assurances
                   _buildTrustCard(context),
                   const SizedBox(height: 8),
                 ],
@@ -319,7 +325,8 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
                     const Icon(Icons.handyman_rounded, color: Colors.white, size: 14),
                     const SizedBox(width: 5),
                     Text(
-                      service.categoryId.toUpperCase(),
+                      localizeCategory(service.categoryId, context.l10n.locale)
+                          .toUpperCase(),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -534,24 +541,37 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildMiniHighlight(
-                  icon: Icons.verified_user_rounded,
-                  label: 'Verified Pros',
-                  color: AppColors.primary,
+                Expanded(
+                  child: _buildMiniHighlight(
+                    icon: Icons.verified_user_rounded,
+                    label: 'Verified Pros',
+                    color: AppColors.primary,
+                  ),
                 ),
-                Container(width: 1, height: 24, color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                _buildMiniHighlight(
-                  icon: Icons.bolt_rounded,
-                  label: 'Fast Arrival',
-                  color: const Color(0xFFD97706),
+                Container(
+                  width: 1,
+                  height: 28,
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
                 ),
-                Container(width: 1, height: 24, color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                _buildMiniHighlight(
-                  icon: Icons.price_check_rounded,
-                  label: 'Fair Pricing',
-                  color: const Color(0xFF059669),
+                Expanded(
+                  child: _buildMiniHighlight(
+                    icon: Icons.bolt_rounded,
+                    label: 'Fast Arrival',
+                    color: const Color(0xFFD97706),
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 28,
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+                Expanded(
+                  child: _buildMiniHighlight(
+                    icon: Icons.price_check_rounded,
+                    label: 'Fair Pricing',
+                    color: const Color(0xFF059669),
+                  ),
                 ),
               ],
             ),
@@ -566,19 +586,25 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
     required String label,
     required Color color,
   }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -777,10 +803,14 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
                 color: Color(0xFF059669),
               ),
               const SizedBox(width: 8),
-              Text(
-                'What\'s Included in this Service',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: Text(
+                  'What\'s Included in this Service',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -1090,8 +1120,11 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
             ),
             child: Text(
               worker.category?.isNotEmpty == true
-                  ? worker.category!.toUpperCase()
-                  : (worker.skills.isNotEmpty ? worker.skills.first : 'PROFESSIONAL'),
+                  ? localizeCategory(worker.category, context.l10n.locale)
+                      .toUpperCase()
+                  : (worker.skills.isNotEmpty
+                      ? localizeCategory(worker.skills.first, context.l10n.locale)
+                      : 'PROFESSIONAL'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -1289,115 +1322,6 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
           ),
         ],
       ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 6. How Fixly Works Card
-  // ---------------------------------------------------------------------------
-  Widget _buildHowItWorksCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'How It Works',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          _buildStepRow(
-            number: '1',
-            title: 'Book in 60 Seconds',
-            description: 'Enter your address, describe the problem, and pick a preferred slot.',
-            color: AppColors.primary,
-          ),
-          const SizedBox(height: 12),
-          _buildStepRow(
-            number: '2',
-            title: 'Verified Pro Arrives',
-            description: 'Technician arrives at your doorstep with secure Arrival OTP verification.',
-            color: const Color(0xFFD97706),
-          ),
-          const SizedBox(height: 12),
-          _buildStepRow(
-            number: '3',
-            title: 'Inspect & Pay',
-            description: 'Review the finished job, verify completion OTP, and pay seamlessly via UPI.',
-            color: const Color(0xFF059669),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepRow({
-    required String number,
-    required String title,
-    required String description,
-    required Color color,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 26,
-          height: 26,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            shape: BoxShape.circle,
-            border: Border.all(color: color.withValues(alpha: 0.3)),
-          ),
-          child: Center(
-            child: Text(
-              number,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

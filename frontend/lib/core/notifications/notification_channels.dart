@@ -25,6 +25,7 @@ abstract final class NotificationChannels {
       case 'BOOKING_UPDATED':
       case 'BOOKING_CANCELLED':
       case 'WORKER_ARRIVED':
+      case 'WORKER_ON_THE_WAY':
       case 'JOB_STARTED':
       case 'INVOICE_UPDATED':
       case 'JOB_COMPLETED':

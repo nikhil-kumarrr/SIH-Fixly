@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router/route_names.dart';
 import '../constants/app_strings.dart';
 import '../../features/auth/presentation/cubit/app_session_cubit.dart';
+import '../navigation/screen_refresh.dart';
 import '../network/worker_realtime_service.dart';
 import 'animated_bottom_nav_bar.dart';
 
@@ -83,6 +84,29 @@ class _WorkerMainShellState extends State<WorkerMainShell> {
   }
 
   void _onTap(int index) {
+    const tabRoots = [
+      RouteNames.workerDashboard,
+      RouteNames.workerJobs,
+      RouteNames.workerWallet,
+      RouteNames.workerProfileTab,
+    ];
+    if (index < 0 || index >= tabRoots.length) return;
+    final target = tabRoots[index];
+    ScreenRefresh.mark(target);
+
+    // Root overlays (navigation map, etc.) — go clears them so tab switch works.
+    final path = GoRouterState.of(context).uri.path;
+    final coveringShell = path.contains('/navigation') ||
+        path.contains('/active-job') ||
+        path.contains('/otp') ||
+        path.contains('/add-parts') ||
+        path.contains('/price-estimation') ||
+        path.contains('/rating');
+    if (coveringShell) {
+      context.go(target);
+      return;
+    }
+
     widget.navigationShell.goBranch(
       index,
       initialLocation: index == widget.navigationShell.currentIndex,

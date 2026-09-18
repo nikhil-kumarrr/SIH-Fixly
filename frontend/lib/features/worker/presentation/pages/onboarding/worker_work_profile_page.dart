@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../../app/router/route_names.dart';
 import '../../../../../app/theme/app_colors.dart';
@@ -11,17 +12,15 @@ import '../../../../../app/theme/theme_x.dart';
 import '../../../../../app/theme/app_spacing.dart';
 import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/constants/app_strings.dart';
-import '../../../../../core/constants/map_constants.dart';
-import '../../../../../core/location/app_location.dart';
 import '../../../../../core/location/location_service.dart';
 import '../../../../../core/network/api_exception.dart';
 import '../../../../../core/widgets/core_widgets.dart';
-import '../../../../../core/widgets/fixly_map_view.dart';
 import '../../../../../shared/widgets/category_chip.dart';
 import '../../cubit/worker_onboarding_cubit.dart';
 import 'worker_onboarding_layout.dart';
 import '../../../../../core/utils/toast_utils.dart';
 import '../../../../shared/data/service_scope_data.dart';
+import '../../../../workers/data/workers_api_repository.dart';
 
 class WorkerWorkProfilePage extends StatefulWidget {
   const WorkerWorkProfilePage({super.key});
@@ -37,11 +36,14 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
   late final TextEditingController _bioController;
   final _rateControllers = <String, TextEditingController>{};
   var _othersOpen = false;
-  var _refreshingLocation = false;
-  var _updatingAddress = false;
   int _scopeSelectedSkillIndex = 0;
   final _customIncludedController = TextEditingController();
   final _customExcludedController = TextEditingController();
+  final _workersApi = WorkersApiRepository();
+
+  List<Map<String, dynamic>> _federations = const [];
+  var _federationsLoading = true;
+  String? _federationsError;
 
   static final _categoryIds =
       ServiceCategories.all.map((c) => c.id).toSet();
@@ -56,17 +58,9 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
     _bioController = TextEditingController(text: data.bio);
     _syncRateControllers(data.skills, data.categoryRates);
 
-    // Default to first registered federation if not chosen
-    if (data.federationId == null && ServiceScopeData.federations.isNotEmpty) {
-      final defaultFed = ServiceScopeData.federations.first;
-      context.read<WorkerOnboardingCubit>().updateFederation(
-            id: defaultFed.id,
-            name: defaultFed.name,
-          );
-    }
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureLocation();
+      _loadFederations();
     });
   }
 
@@ -118,19 +112,59 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
   }
 
   Future<void> _ensureLocation() async {
-    if (!mounted) return;
-    setState(() => _refreshingLocation = true);
     await LocationService.instance.refreshCurrentPosition();
-    if (!mounted) return;
-    setState(() => _refreshingLocation = false);
   }
 
-  Future<void> _onMapLocationMoved(MapCoordinate coord) async {
+  String _federationId(Map<String, dynamic> fed) =>
+      (fed['_id'] ?? fed['id'] ?? '').toString();
+
+  String _federationName(Map<String, dynamic> fed) {
+    final name = (fed['federationName'] ?? fed['name'] ?? '').toString().trim();
+    return name.isEmpty ? 'Federation' : name;
+  }
+
+  String _federationSubtitle(Map<String, dynamic> fed) {
+    final state = fed['state']?.toString().trim() ?? '';
+    final district = fed['district']?.toString().trim() ?? '';
+    if (state.isEmpty && district.isEmpty) return 'Approved federation';
+    if (district.isEmpty) return state;
+    if (state.isEmpty) return district;
+    return '$district · $state';
+  }
+
+  Future<void> _loadFederations() async {
     if (!mounted) return;
-    setState(() => _updatingAddress = true);
-    await LocationService.instance.updatePosition(coord.lat, coord.lng);
-    if (!mounted) return;
-    setState(() => _updatingAddress = false);
+    setState(() {
+      _federationsLoading = true;
+      _federationsError = null;
+    });
+    try {
+      final list = await _workersApi.fetchFederations();
+      if (!mounted) return;
+      final cubit = context.read<WorkerOnboardingCubit>();
+      final currentId = cubit.state.formData.federationId;
+      if (list.isNotEmpty &&
+          (currentId == null ||
+              currentId.isEmpty ||
+              !list.any((f) => _federationId(f) == currentId))) {
+        final first = list.first;
+        cubit.updateFederation(
+          id: _federationId(first),
+          name: _federationName(first),
+        );
+      }
+      setState(() {
+        _federations = list;
+        _federationsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _federations = const [];
+        _federationsLoading = false;
+        _federationsError = ApiException.fromError(e);
+      });
+    }
   }
 
   void _commitTypedSkills({required bool keepRemainder}) {
@@ -220,16 +254,6 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
   List<String> _customSkills(List<String> skills) =>
       skills.where((s) => !_categoryIds.contains(s)).toList();
 
-  MapCoordinate? _userMapCenter(BuildContext context) {
-    final loc = AppLocation.instance;
-    if (!loc.hasFix) return null;
-    return MapCoordinate(
-      lat: loc.lat!,
-      lng: loc.lng!,
-      label: context.l10n.youAreHere,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final locale = context.l10n.locale;
@@ -239,8 +263,6 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
     return BlocBuilder<WorkerOnboardingCubit, WorkerOnboardingState>(
       builder: (context, state) {
         final customSkills = _customSkills(state.formData.skills);
-        final mapCenter = _userMapCenter(context);
-        final address = AppLocation.instance.addressLabel?.trim();
         _syncRateControllers(
           state.formData.skills,
           state.formData.categoryRates,
@@ -254,7 +276,7 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Certificate, skills, rates, and your current location.',
+                'Certificate, skills, rates, and federation affiliation.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               if (state.errorMessage == 'NAME_MISMATCH')
@@ -494,95 +516,6 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
               ),
               _buildFederationSection(context, state, cubit),
               _buildScopeOfWorkSection(context, state, cubit, locale),
-              OnboardingSection(
-                title: l10n.serviceArea,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.serviceAreaHint,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.scheme.primaryContainer
-                            .withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color:
-                              context.scheme.primary.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          if (_updatingAddress)
-                            const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
-                            Icon(
-                              Icons.place_outlined,
-                              size: 18,
-                              color: context.scheme.primary,
-                            ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _updatingAddress
-                                  ? 'Updating address…'
-                                  : (address != null && address.isNotEmpty
-                                      ? address
-                                      : 'Move map or tap refresh to detect location'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    FixlyMapView(
-                      height: 280,
-                      borderRadius: BorderRadius.circular(16),
-                      center: mapCenter,
-                      zoom: MapConstants.pickerZoom,
-                      showDestinationPin: true,
-                      claimGestures: true,
-                      showZoomControls: true,
-                      showRecenterButton: true,
-                      onLocationChanged: _onMapLocationMoved,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed:
-                            _refreshingLocation ? null : _ensureLocation,
-                        icon: _refreshingLocation
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.my_location_outlined, size: 18),
-                        label: Text(l10n.refreshLocation),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         );
@@ -590,15 +523,31 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
     );
   }
 
+  Future<void> _pickRecentWorkPhotos(
+    BuildContext context,
+    WorkerOnboardingCubit cubit,
+    WorkerOnboardingState state,
+  ) async {
+    final picker = ImagePicker();
+    final files = await picker.pickMultiImage(imageQuality: 80);
+    if (files.isEmpty) return;
+    final paths = [
+      ...state.formData.recentWorkPhotoPaths,
+      ...files.map((f) => f.path),
+    ].take(6).toList();
+    cubit.updateRecentWorkPhotos(paths);
+  }
+
   Widget _buildFederationSection(
     BuildContext context,
     WorkerOnboardingState state,
     WorkerOnboardingCubit cubit,
   ) {
-    final currentFedName = state.formData.federationName ??
-        (ServiceScopeData.federations.isNotEmpty
-            ? ServiceScopeData.federations.first.name
-            : 'National Labour Cooperative Federation (NLCF)');
+    final currentFedName = state.formData.federationName?.trim().isNotEmpty == true
+        ? state.formData.federationName!
+        : (_federations.isNotEmpty
+            ? _federationName(_federations.first)
+            : 'Select a federation');
 
     return OnboardingSection(
       title: 'Cooperative Federation',
@@ -610,64 +559,102 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: AppSpacing.md),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: const Color(0xFF10B981).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
+          if (_federationsLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_federationsError != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.groups_rounded,
-                    color: Color(0xFF10B981),
-                    size: 24,
-                  ),
+                Text(
+                  _federationsError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'SELECTED FEDERATION',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF10B981),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        currentFedName,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: () => _showFederationPicker(context, state, cubit),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: const Text('Change'),
+                const SizedBox(height: 8),
+                SecondaryButton(
+                  label: 'Retry',
+                  onPressed: _loadFederations,
                 ),
               ],
+            )
+          else if (_federations.isEmpty)
+            Text(
+              'No approved federations available yet. Ask admin to approve one.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: context.muted,
+                  ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.groups_rounded,
+                      color: Color(0xFF10B981),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'SELECTED FEDERATION',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF10B981),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          currentFedName,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  OutlinedButton(
+                    onPressed: () =>
+                        _showFederationPicker(context, state, cubit),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Change'),
+                  ),
+                ],
+              ),
             ),
+          const SizedBox(height: AppSpacing.md),
+          SecondaryButton(
+            label:
+                'Add recent work photos (${state.formData.recentWorkPhotoPaths.length})',
+            onPressed: () => _pickRecentWorkPhotos(context, cubit, state),
           ),
         ],
       ),
@@ -679,6 +666,13 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
     WorkerOnboardingState state,
     WorkerOnboardingCubit cubit,
   ) {
+    if (_federations.isEmpty) {
+      ToastUtils.showToast(
+        context: context,
+        message: 'No federations loaded',
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -719,16 +713,18 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
               Expanded(
                 child: ListView.separated(
                   controller: scrollController,
-                  itemCount: ServiceScopeData.federations.length,
+                  itemCount: _federations.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
-                    final fed = ServiceScopeData.federations[index];
-                    final isSelected = state.formData.federationId == fed.id ||
+                    final fed = _federations[index];
+                    final id = _federationId(fed);
+                    final name = _federationName(fed);
+                    final isSelected = state.formData.federationId == id ||
                         (state.formData.federationId == null && index == 0);
 
                     return InkWell(
                       onTap: () {
-                        cubit.updateFederation(id: fed.id, name: fed.name);
+                        cubit.updateFederation(id: id, name: name);
                         Navigator.of(ctx).pop();
                       },
                       borderRadius: BorderRadius.circular(12),
@@ -752,7 +748,9 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
                               isSelected
                                   ? Icons.radio_button_checked
                                   : Icons.radio_button_off,
-                              color: isSelected ? const Color(0xFF10B981) : Colors.grey,
+                              color: isSelected
+                                  ? const Color(0xFF10B981)
+                                  : Colors.grey,
                               size: 20,
                             ),
                             const SizedBox(width: 12),
@@ -761,18 +759,22 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    fed.name,
+                                    name,
                                     style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
                                       fontSize: 13.5,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${fed.state} • Reg: ${fed.regNo}',
+                                    _federationSubtitle(fed),
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: isSelected ? const Color(0xFF10B981) : Colors.grey,
+                                      color: isSelected
+                                          ? const Color(0xFF10B981)
+                                          : Colors.grey,
                                     ),
                                   ),
                                 ],

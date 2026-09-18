@@ -1,0 +1,17 @@
+# Netlify Configuration for Fixly Admin Panel
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+# Proxy /api calls to AWS ALB to avoid Browser Mixed Content (HTTPS -> HTTP) blocking
+[[redirects]]
+  from = "/api/*"
+  to = "http://fexily-lb-380632449.ap-south-1.elb.amazonaws.com/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

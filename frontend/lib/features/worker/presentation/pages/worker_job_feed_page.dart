@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/router/route_names.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../core/network/worker_realtime_service.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
+import '../../../../services/webrtc_call_service.dart';
 import '../../../../shared/models/models.dart';
 import '../cubit/job_feed_cubit.dart';
 
@@ -19,8 +20,17 @@ class WorkerJobFeedPage extends StatefulWidget {
   State<WorkerJobFeedPage> createState() => _WorkerJobFeedPageState();
 }
 
-class _WorkerJobFeedPageState extends State<WorkerJobFeedPage> {
+class _WorkerJobFeedPageState extends State<WorkerJobFeedPage>
+    with RefreshWhenNavigatedTo {
   String _selectedFilter = 'ALL'; // 'ALL', 'INCOMING', 'ACTIVE', 'COMPLETED'
+
+  @override
+  List<String> get refreshRoutePaths => [RouteNames.workerJobs];
+
+  @override
+  void onScreenRefresh() {
+    context.read<JobFeedCubit>().load();
+  }
 
   @override
   void initState() {
@@ -58,11 +68,35 @@ class _WorkerJobFeedPageState extends State<WorkerJobFeedPage> {
     }
   }
 
-  Future<void> _callCustomer(String phone) async {
-    final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-    final uri = Uri.parse('tel:$clean');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+  Future<void> _callCustomerWebRtc(WorkerJob job) async {
+    final bookingId = job.id;
+    if (bookingId.isEmpty) {
+      ToastUtils.showError(context: context, message: 'Booking ID not available');
+      return;
+    }
+    final peerName = job.customerName.trim();
+    context.push(
+      RouteNames.call,
+      extra: {
+        'bookingId': bookingId,
+        'peerName': peerName.isEmpty ? 'Customer' : peerName,
+        'peerRole': 'customer',
+        'peerAvatar': job.customerAvatar,
+        'serviceTitle': job.title,
+        'isIncoming': false,
+      },
+    );
+
+    final success = await WebRTCCallService.instance.startCall(
+      bookingId: bookingId,
+      expectedPeerName: peerName.isEmpty ? 'Customer' : peerName,
+      expectedPeerRole: 'customer',
+      expectedPeerAvatar: job.customerAvatar,
+      expectedServiceTitle: job.title,
+    );
+
+    if (!success && mounted) {
+      ToastUtils.showError(context: context, message: 'Could not connect call');
     }
   }
 
@@ -178,10 +212,8 @@ class _WorkerJobFeedPageState extends State<WorkerJobFeedPage> {
                                     onCancelScheduled: () => context
                                         .read<JobFeedCubit>()
                                         .cancelScheduledJob(job.id),
-                                    onCall: job.customerPhone != null &&
-                                            job.customerPhone!.isNotEmpty &&
-                                            job.status != JobStatus.completed
-                                        ? () => _callCustomer(job.customerPhone!)
+                                    onCall: job.status != JobStatus.completed
+                                        ? () => _callCustomerWebRtc(job)
                                         : null,
                                     onTap: () => context.push(
                                       RouteNames.workerJobDetailPath(job.id),

@@ -11,6 +11,16 @@ class ApiException implements Exception {
     if (trimmed.isEmpty) return 'Something went wrong. Please try again.';
 
     final lower = trimmed.toLowerCase();
+    // Razorpay cancel / native bridge often yields "undefined" / "unidentified".
+    if (lower == 'undefined' ||
+        lower == 'null' ||
+        lower == 'exception: undefined' ||
+        lower == 'exception: null' ||
+        lower.contains('unidentified') ||
+        lower.contains('payment_cancelled') ||
+        lower.contains('payment cancelled')) {
+      return 'Payment failed';
+    }
     if (lower.contains('extract geo') ||
         lower.contains('out of bounds') ||
         lower.contains('longitude/latitude') ||
@@ -37,7 +47,16 @@ class ApiException implements Exception {
     if (lower.contains('cloudflare tunnel')) {
       return 'API tunnel is down. Restart cloudflared on the host machine.';
     }
-    if (trimmed.length > 140) {
+    // Truncate only dump-looking payloads — keep full product API copy.
+    final looksLikeDump = lower.contains('\n') ||
+        lower.contains('stack') ||
+        lower.contains('e11000') ||
+        lower.contains('cast to') ||
+        lower.contains('<html') ||
+        lower.contains('mongoerror') ||
+        lower.contains('validationerror') ||
+        (trimmed.length > 320 && !trimmed.contains('. '));
+    if (looksLikeDump && trimmed.length > 140) {
       return 'Something went wrong. Please try again.';
     }
     return trimmed;

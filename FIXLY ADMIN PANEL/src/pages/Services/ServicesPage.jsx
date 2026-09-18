@@ -16,19 +16,22 @@ import {
   Trash2,
   Edit,
   ShieldCheck,
-  CheckCircle
+  CheckCircle,
+  RefreshCw,
 } from 'lucide-react';
 import AddServiceModal from '../../components/modals/AddServiceModal';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import Badge from '../../components/common/Badge';
 import Pagination from '../../components/common/Pagination';
+import { toTitleCase } from '../../data/services';
 
 export default function ServicesPage() {
-  const { services, servicesPagination, fetchServices, deleteService, updateService } = useApp();
+  const { services, servicesPagination, fetchServices, deleteService, updateService, syncServicesCache } = useApp();
 
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [serviceToEdit, setServiceToEdit] = useState(null);
   const pageSize = 10;
@@ -40,6 +43,15 @@ export default function ServicesPage() {
       search
     });
   }, [fetchServices, currentPage, search]);
+
+  const handleSyncCache = async () => {
+    try {
+      setIsSyncing(true);
+      await syncServicesCache();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   let filtered = [...services];
   if (search && search.trim() !== '') {
@@ -88,24 +100,53 @@ export default function ServicesPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '9px 16px',
-            backgroundColor: 'var(--primary-brand)',
-            color: '#ffffff',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: '600',
-            boxShadow: 'var(--shadow-pill)',
-          }}
-        >
-          <Plus size={16} />
-          <span>Add New Service</span>
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={handleSyncCache}
+            disabled={isSyncing}
+            title="Push & synchronize all services and categories to Redis cache"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '9px 16px',
+              backgroundColor: '#ffffff',
+              color: '#0284c7',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '600',
+              border: '1px solid #bae6fd',
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              opacity: isSyncing ? 0.7 : 1,
+            }}
+          >
+            <RefreshCw size={15} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
+            <span>{isSyncing ? 'Syncing Redis...' : 'Sync Redis Cache'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setServiceToEdit(null);
+              setIsAddModalOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '9px 16px',
+              backgroundColor: 'var(--primary-brand)',
+              color: '#ffffff',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '600',
+              boxShadow: 'var(--shadow-pill)',
+            }}
+          >
+            <Plus size={16} />
+            <span>Add New Service</span>
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -206,10 +247,10 @@ export default function ServicesPage() {
                   </div>
                   <div>
                     <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>
-                      {s.name}
+                      {toTitleCase(s.name || s.title)}
                     </h3>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      Category: <strong>{s.category}</strong>
+                      Category: <strong>{toTitleCase(s.category)}</strong>
                     </div>
                   </div>
                 </div>
@@ -264,10 +305,7 @@ export default function ServicesPage() {
             {/* Actions */}
             <div style={{ display: 'flex', gap: '8px', marginTop: '16px', borderTop: '1px solid #f1f5f9', paddingTop: '14px' }}>
               <button
-                onClick={() => {
-                  const newRate = prompt('Enter new benchmark rate:', s.basePrice);
-                  if (newRate) updateService(s.id, { basePrice: newRate });
-                }}
+                onClick={() => setServiceToEdit(s)}
                 style={{
                   flex: 1,
                   padding: '7px',
@@ -276,9 +314,16 @@ export default function ServicesPage() {
                   color: '#334155',
                   fontSize: '12px',
                   fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  border: '1px solid #e2e8f0',
                 }}
               >
-                Edit Rate Card
+                <Edit size={14} />
+                <span>Edit Service</span>
               </button>
 
               <button
@@ -308,7 +353,14 @@ export default function ServicesPage() {
         />
       </div>
 
-      <AddServiceModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
+      <AddServiceModal
+        isOpen={isAddModalOpen || !!serviceToEdit}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setServiceToEdit(null);
+        }}
+        serviceToEdit={serviceToEdit}
+      />
 
       {/* Delete confirmation */}
       <ConfirmDialog

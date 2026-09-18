@@ -5,11 +5,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/route_names.dart';
+import '../../../../core/navigation/screen_refresh.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../services/webrtc_call_service.dart';
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../core/utils/toast_utils.dart';
+import '../../../../shared/models/models.dart';
+import '../../../bookings/data/bookings_api_repository.dart';
 import '../cubit/active_job_cubit.dart';
+import '../widgets/worker_sos_sheet.dart';
 
 class WorkerActiveJobPage extends StatefulWidget {
   const WorkerActiveJobPage({super.key});
@@ -21,6 +27,7 @@ class WorkerActiveJobPage extends StatefulWidget {
 class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
   Timer? _reviewNavTimer;
   bool _reviewNavScheduled = false;
+  bool _startingNav = false;
 
   @override
   void initState() {
@@ -34,17 +41,49 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
     super.dispose();
   }
 
+  Future<void> _startNavigate(String bookingId) async {
+    if (_startingNav) return;
+    _startingNav = true;
+    try {
+      await BookingsApiRepository().startNavigation(bookingId);
+    } catch (e) {
+      debugPrint('startNavigation on swipe failed: $e');
+      if (mounted) {
+        ToastUtils.showToast(
+          context: context,
+          message: 'Could not notify customer — open map & start GPS anyway',
+        );
+      }
+    }
+    if (!mounted) return;
+    await context.push('${RouteNames.workerNavigation}?bookingId=$bookingId');
+    _startingNav = false;
+  }
+
   void _scheduleReviewNavigation(String bookingId) {
     if (_reviewNavScheduled) return;
     _reviewNavScheduled = true;
     _reviewNavTimer?.cancel();
     _reviewNavTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
-      context.push('${RouteNames.workerRating}?bookingId=$bookingId');
+      context.goRefreshing(RouteNames.workerRatingPath(bookingId));
     });
   }
 
   void _openFinalBilling(BuildContext context, String bookingId) {
+    final state = context.read<ActiveJobCubit>().state;
+    final raw = (state.job?.rawStatus ?? '').toUpperCase();
+    if (state.status == ActiveJobStatus.awaitingPayment ||
+        state.status == ActiveJobStatus.paymentReceived ||
+        raw == 'PAYMENT_PENDING' ||
+        raw == 'COMPLETED' ||
+        raw == 'PAYMENT_PAID') {
+      ToastUtils.showToast(
+        context: context,
+        message: 'Payment already requested — waiting for customer',
+      );
+      return;
+    }
     context.push('${RouteNames.workerAddParts}?bookingId=$bookingId');
   }
 
@@ -54,10 +93,10 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
       listenWhen: (previous, current) =>
           previous.status != current.status || previous.error != current.error,
       listener: (context, state) {
-        if (state.status == ActiveJobStatus.reviewSubmitted) {
-          context.go(RouteNames.workerDashboard);
-        } else if (state.status == ActiveJobStatus.loaded && state.job == null) {
-          context.go(RouteNames.workerDashboard);
+        // Navigation / billing overlays sit above this page — don't steal route.
+        if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+        if (state.status == ActiveJobStatus.loaded && state.job == null) {
+          context.goRefreshing(RouteNames.workerDashboard);
         } else if (state.status == ActiveJobStatus.paymentReceived &&
             state.job != null) {
           _scheduleReviewNavigation(state.job!.id);
@@ -89,18 +128,28 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
                         color: Colors.grey.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.work_off_outlined, size: 54, color: Colors.grey),
+                      child: const Icon(
+                        Icons.work_off_outlined,
+                        size: 54,
+                        color: Colors.grey,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     const Text(
                       'No Active Job',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'You do not have any ongoing booking right now.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13),
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
@@ -110,7 +159,10 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -128,6 +180,13 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
         return AppScaffold(
           title: 'Active Job',
           padding: EdgeInsets.zero,
+          actions: [
+            IconButton(
+              tooltip: 'SOS',
+              icon: const Icon(Icons.sos_rounded, color: Colors.red),
+              onPressed: () => WorkerSosSheet.show(context, bookingId: job.id),
+            ),
+          ],
           body: Column(
             children: [
               _buildStatusBanner(rawStatus, state.status),
@@ -141,7 +200,8 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
                       _buildServiceCard(job, context),
                       const SizedBox(height: 16),
                       _buildCustomerCard(job, context),
-                      if (job.problemDescription != null && job.problemDescription!.isNotEmpty) ...[
+                      if (job.problemDescription != null &&
+                          job.problemDescription!.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         _buildProblemDescriptionCard(job, context),
                       ],
@@ -180,7 +240,8 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
       bgColor = AppColors.warning.withValues(alpha: 0.1);
       textColor = AppColors.warning;
       text = 'Arrived — Estimate or start work';
-    } else if (rawStatus == 'ESTIMATION_GIVEN' || rawStatus == 'ESTIMATION_SUBMITTED') {
+    } else if (rawStatus == 'ESTIMATION_GIVEN' ||
+        rawStatus == 'ESTIMATION_SUBMITTED') {
       bgColor = AppColors.warning.withValues(alpha: 0.1);
       textColor = AppColors.warning;
       text = 'Waiting for customer to accept estimation';
@@ -192,7 +253,8 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
       bgColor = AppColors.success.withValues(alpha: 0.1);
       textColor = AppColors.success;
       text = 'Job In Progress — Working';
-    } else if (rawStatus == 'PAYMENT_PENDING' || status == ActiveJobStatus.awaitingPayment) {
+    } else if (rawStatus == 'PAYMENT_PENDING' ||
+        status == ActiveJobStatus.awaitingPayment) {
       bgColor = const Color(0xFFFFFBEB);
       textColor = const Color(0xFFD97706);
       text = 'Awaiting customer payment';
@@ -229,19 +291,25 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
                   height: 120,
                   width: double.infinity,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const SizedBox(height: 120, child: Icon(Icons.image_not_supported)),
+                  errorBuilder: (_, __, ___) => const SizedBox(
+                    height: 120,
+                    child: Icon(Icons.image_not_supported),
+                  ),
                 ),
               ),
             ),
           Text(
             job.title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           if (job.serviceCategory != null)
             Text(
-              job.serviceCategory!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+              localizeCategory(job.serviceCategory, context.l10n.locale),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
             ),
         ],
       ),
@@ -253,21 +321,36 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Customer', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Text(
+            'Customer',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundImage: job.customerAvatar != null ? NetworkImage(job.customerAvatar!) : null,
-                child: job.customerAvatar == null ? Text(job.customerName[0].toUpperCase()) : null,
+                backgroundImage: job.customerAvatar != null
+                    ? NetworkImage(job.customerAvatar!)
+                    : null,
+                child: job.customerAvatar == null
+                    ? Text(job.customerName[0].toUpperCase())
+                    : null,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(job.customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(
+                      job.customerName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
                     Text(
                       job.address,
                       maxLines: 2,
@@ -289,11 +372,19 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.lock_outline, size: 18, color: Color(0xFF16A34A)),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 18,
+                  color: Color(0xFF16A34A),
+                ),
                 const SizedBox(width: 8),
                 const Text(
                   'Encrypted Audio Call',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF16A34A), fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF16A34A),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -311,7 +402,10 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
   Future<void> _makeWebRTCCall(dynamic job) async {
     final bookingId = job.id as String?;
     if (bookingId == null || bookingId.isEmpty) {
-      ToastUtils.showToast(context: context, message: 'Booking ID not available');
+      ToastUtils.showToast(
+        context: context,
+        message: 'Booking ID not available',
+      );
       return;
     }
 
@@ -348,7 +442,9 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
         children: [
           Text(
             'Problem Description',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(job.problemDescription ?? ''),
@@ -386,25 +482,33 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
   }
 
   Widget _buildInvoiceCard(dynamic job, BuildContext context) {
+    final WorkerJob j = job as WorkerJob;
+    final platform = j.platformFee ?? j.invoice?.platformFee ?? 0.0;
+    final base = j.baseServiceFee ?? j.invoice?.baseServiceFee;
+    final extras = j.extraPartsTotal ?? j.invoice?.extraPartsTotal;
+    final payout = j.workerPayout;
+
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Pricing',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            'Your Payout',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-          if (job.baseServiceFee != null) ...[
-            _buildPriceRow('Base fee', job.baseServiceFee!),
+          if (base != null && base > 0) ...[
+            _buildPriceRow('Base fee', base),
             const SizedBox(height: 8),
           ],
-          if (job.extraPartsTotal != null && job.extraPartsTotal! > 0) ...[
-            _buildPriceRow('Extra parts', job.extraPartsTotal!),
+          if (extras != null && extras > 0) ...[
+            _buildPriceRow('Extra parts', extras),
             const SizedBox(height: 8),
           ],
-          if (job.platformFee != null) ...[
-            _buildPriceRow('Platform fee', job.platformFee!),
+          if (platform > 0) ...[
+            _buildPriceRow('Platform fee (deducted)', -platform),
             const SizedBox(height: 8),
           ],
           const Divider(),
@@ -412,10 +516,16 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text(
+                'Your payout',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
               Text(
-                '₹${job.pay.toStringAsFixed(0)}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                '₹${payout.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
             ],
           ),
@@ -425,11 +535,20 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
   }
 
   Widget _buildPriceRow(String label, double amount) {
+    final isDeduction = amount < 0;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-        Text('₹${amount.toStringAsFixed(0)}'),
+        Text(
+          isDeduction
+              ? '-₹${amount.abs().toStringAsFixed(0)}'
+              : '₹${amount.toStringAsFixed(0)}',
+          style: TextStyle(
+            color: isDeduction ? const Color(0xFFDC2626) : null,
+            fontWeight: isDeduction ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
       ],
     );
   }
@@ -457,13 +576,21 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
             SizedBox(height: 12),
             Text(
               'Payment Received!',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF166534)),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Color(0xFF166534),
+              ),
               textAlign: TextAlign.center,
             ),
             SizedBox(height: 8),
             Text(
               'Taking you to the review screen in 3 seconds…',
-              style: TextStyle(fontSize: 13, color: Color(0xFF15803D), height: 1.4),
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFF15803D),
+                height: 1.4,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -474,7 +601,7 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
     if (rawStatus == 'APPROVED' || rawStatus == 'ACCEPTED') {
       return SwipeActionButton(
         label: 'Swipe to Navigate',
-        onCompleted: () => context.push('${RouteNames.workerNavigation}?bookingId=${job.id}'),
+        onCompleted: () => _startNavigate(job.id),
       );
     }
 
@@ -482,26 +609,53 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
       return Column(
         children: [
           PrimaryButton(
-            label: 'Start Work',
-            onPressed: () => context.read<ActiveJobCubit>().startJob(),
+            label: 'Create Rough Estimation',
+            onPressed: () async {
+              final submitted = await context.push<bool>(
+                '${RouteNames.workerPriceEstimation}?bookingId=${job.id}',
+              );
+              if (submitted == true && context.mounted) {
+                context.read<ActiveJobCubit>().load();
+              }
+            },
           ),
           const SizedBox(height: 12),
           SecondaryButton(
-            label: 'Show Rough Estimation to Customer',
-            onPressed: () =>
-                context.push('${RouteNames.workerPriceEstimation}?bookingId=${job.id}'),
+            label: 'Start Work (skip estimation)',
+            onPressed: () => context.read<ActiveJobCubit>().startJob(),
           ),
         ],
       );
     }
 
-    if (rawStatus == 'ESTIMATION_GIVEN' || rawStatus == 'ESTIMATION_SUBMITTED') {
-      return const Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Text(
-          'Waiting for customer to accept estimation…',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+    if (rawStatus == 'ESTIMATION_GIVEN' ||
+        rawStatus == 'ESTIMATION_SUBMITTED') {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF3C7),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706)),
+            SizedBox(height: 8),
+            Text(
+              'Rough estimation sent',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Color(0xFFB45309),
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Waiting for customer to accept…',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFFB45309), fontSize: 13),
+            ),
+          ],
         ),
       );
     }
@@ -513,7 +667,9 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
       );
     }
 
-    if (rawStatus == 'IN_PROGRESS') {
+    if (rawStatus == 'IN_PROGRESS' &&
+        state.status != ActiveJobStatus.awaitingPayment &&
+        state.status != ActiveJobStatus.paymentReceived) {
       return Column(
         children: [
           Text(
@@ -525,16 +681,12 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
             label: 'Swipe — Work Complete & Bill',
             onCompleted: () => _openFinalBilling(context, job.id),
           ),
-          const SizedBox(height: 12),
-          SecondaryButton(
-            label: 'Final Billing & Request Payment',
-            onPressed: () => _openFinalBilling(context, job.id),
-          ),
         ],
       );
     }
 
-    if (rawStatus == 'PAYMENT_PENDING' || state.status == ActiveJobStatus.awaitingPayment) {
+    if (rawStatus == 'PAYMENT_PENDING' ||
+        state.status == ActiveJobStatus.awaitingPayment) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
@@ -549,13 +701,21 @@ class _WorkerActiveJobPageState extends State<WorkerActiveJobPage> {
             SizedBox(height: 12),
             Text(
               'Awaiting Customer Payment',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF92400E)),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+                color: Color(0xFF92400E),
+              ),
               textAlign: TextAlign.center,
             ),
             SizedBox(height: 8),
             Text(
               'Customer has been asked to pay.\nThis screen updates automatically when payment is received.',
-              style: TextStyle(fontSize: 13, color: Color(0xFFB45309), height: 1.4),
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFFB45309),
+                height: 1.4,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

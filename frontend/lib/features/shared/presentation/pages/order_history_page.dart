@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,9 @@ import 'package:intl/intl.dart';
 import '../../../../app/router/route_names.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
+import '../../../../core/navigation/screen_refresh.dart';
+import '../../../../core/network/customer_realtime_service.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
@@ -21,39 +26,204 @@ class OrderHistoryPage extends StatefulWidget {
   State<OrderHistoryPage> createState() => _OrderHistoryPageState();
 }
 
-class _OrderHistoryPageState extends State<OrderHistoryPage> {
+class _OrderHistoryPageState extends State<OrderHistoryPage>
+    with RefreshWhenNavigatedTo {
+  final _bookings = BookingsApiRepository();
   late Future<List<Booking>> _ordersFuture;
+  List<Booking> _orders = const [];
   int _selectedFilter = 0; // 0: All, 1: Ongoing, 2: Completed
+  Timer? _navPollTimer;
+  StreamSubscription<Map<String, dynamic>>? _statusSub;
+
+  @override
+  List<String> get refreshRoutePaths => [
+        RouteNames.customerOrders,
+        RouteNames.sharedOrderHistory,
+      ];
+
+  @override
+  void onScreenRefresh() {
+    unawaited(_onRefresh());
+  }
 
   @override
   void initState() {
     super.initState();
     _ordersFuture = _fetchOrders();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bindRealtime());
   }
 
-  Future<List<Booking>> _fetchOrders() => BookingsApiRepository().history();
+  @override
+  void dispose() {
+    _navPollTimer?.cancel();
+    _statusSub?.cancel();
+    super.dispose();
+  }
+
+  Future<List<Booking>> _fetchOrders() async {
+    final list = await _bookings.history(forceNetwork: true);
+    if (mounted) {
+      setState(() => _orders = list);
+      _syncNavPoll();
+      _bindRealtime();
+    }
+    return list;
+  }
 
   Future<void> _onRefresh() async {
+    final next = _fetchOrders();
     setState(() {
-      _ordersFuture = _fetchOrders();
+      _ordersFuture = next;
     });
-    await _ordersFuture;
+    try {
+      await next;
+    } catch (_) {
+      // Error stays on [_ordersFuture] for FutureBuilder; don't rethrow to zone.
+    }
   }
 
-  List<Booking> _filterOrders(List<Booking> orders) {
+  bool _needsNavWatch(List<Booking> orders, {required bool isWorker}) {
+    if (isWorker) return false;
+    return orders.any(
+      (o) =>
+          (o.status == BookingStatus.accepted ||
+              o.status == BookingStatus.arrived) &&
+          !o.workerHasStartedNavigation,
+    );
+  }
+
+  void _bindRealtime() {
+    if (!mounted) return;
+    final role =
+        context.read<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
+    if (role == UserRole.worker) {
+      _statusSub?.cancel();
+      _statusSub = null;
+      return;
+    }
+
+    final userId = context.read<AppSessionCubit>().currentUser?.id;
+    if (userId != null && userId.isNotEmpty) {
+      CustomerRealtimeService.instance.initForCustomer(userId);
+    }
+
+    // Track first pending booking room (socket room); polling covers the rest.
+    final pending = _orders.where(
+      (o) =>
+          (o.status == BookingStatus.accepted ||
+              o.status == BookingStatus.arrived) &&
+          !o.workerHasStartedNavigation,
+    );
+    if (pending.isNotEmpty) {
+      CustomerRealtimeService.instance.trackBooking(pending.first.id);
+    }
+
+    _statusSub?.cancel();
+    _statusSub =
+        CustomerRealtimeService.instance.bookingStatusStream.listen((map) {
+      final eventId = map['bookingId']?.toString();
+      final canonical = map['canonicalBookingId']?.toString();
+      final navStarted = map['workerNavigationStarted'] == true ||
+          map['workerNavigationStartedAt'] != null;
+      final touchesWatching = _orders.any(
+        (o) =>
+            o.id == eventId ||
+            o.displayId == eventId ||
+            o.id == canonical ||
+            o.displayId == canonical,
+      );
+      if (!touchesWatching && !navStarted) return;
+      unawaited(_pollNavigationFlags(forceIds: {
+        if (eventId != null && eventId.isNotEmpty) eventId,
+        if (canonical != null && canonical.isNotEmpty) canonical,
+      }));
+    });
+  }
+
+  void _syncNavPoll() {
+    if (!mounted) return;
+    final role =
+        context.read<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
+    final isWorker = role == UserRole.worker;
+    _navPollTimer?.cancel();
+    _navPollTimer = null;
+    if (!_needsNavWatch(_orders, isWorker: isWorker)) return;
+    unawaited(_pollNavigationFlags());
+    _navPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_pollNavigationFlags());
+    });
+  }
+
+  Future<void> _pollNavigationFlags({Set<String> forceIds = const {}}) async {
+    if (!mounted || _orders.isEmpty) return;
+    final pending = _orders
+        .where(
+          (o) =>
+              forceIds.contains(o.id) ||
+              forceIds.contains(o.displayId) ||
+              ((o.status == BookingStatus.accepted ||
+                      o.status == BookingStatus.arrived) &&
+                  !o.workerHasStartedNavigation),
+        )
+        .toList();
+    if (pending.isEmpty) {
+      _navPollTimer?.cancel();
+      _navPollTimer = null;
+      return;
+    }
+
+    var changed = false;
+    final next = List<Booking>.from(_orders);
+    for (final order in pending) {
+      try {
+        final fresh = await _bookings.getById(
+          order.id,
+          serviceTitle: order.serviceTitle,
+          forceNetwork: true,
+        );
+        final idx = next.indexWhere((o) => o.id == order.id);
+        if (idx < 0) continue;
+        if (fresh.workerHasStartedNavigation !=
+                next[idx].workerHasStartedNavigation ||
+            fresh.status != next[idx].status ||
+            fresh.workerNavigationStartedAt !=
+                next[idx].workerNavigationStartedAt) {
+          next[idx] = fresh;
+          changed = true;
+        }
+      } catch (_) {}
+    }
+    if (!mounted || !changed) return;
+    setState(() => _orders = next);
+    _syncNavPoll();
+    _bindRealtime();
+  }
+
+  List<Booking> _filterOrders(List<Booking> orders, {required bool isWorker}) {
     switch (_selectedFilter) {
       case 1:
-        return orders.where((o) =>
-          o.status == BookingStatus.searching ||
-          o.status == BookingStatus.accepted ||
-          o.status == BookingStatus.arrived ||
-          o.status == BookingStatus.inProgress
-        ).toList();
+        return orders
+            .where(
+              (o) =>
+                  o.needsReview(isWorker: isWorker) ||
+                  o.isAwaitingPayment ||
+                  o.status == BookingStatus.searching ||
+                  o.status == BookingStatus.accepted ||
+                  o.status == BookingStatus.arrived ||
+                  o.status == BookingStatus.inProgress,
+            )
+            .toList();
       case 2:
-        return orders.where((o) =>
-          o.status == BookingStatus.completed ||
-          o.status == BookingStatus.paid
-        ).toList();
+        return orders
+            .where(
+              (o) =>
+                  !o.needsReview(isWorker: isWorker) &&
+                  !o.isAwaitingPayment &&
+                  (o.status == BookingStatus.completed ||
+                      o.status == BookingStatus.paid ||
+                      o.status == BookingStatus.cancelled),
+            )
+            .toList();
       default:
         return orders;
     }
@@ -138,16 +308,17 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
               );
             }
 
-            final allOrders = snap.data ?? const [];
+            final allOrders =
+                _orders.isNotEmpty ? _orders : (snap.data ?? const []);
             if (allOrders.isEmpty) {
               return _buildEmptyState(context, isWorker, isFiltered: false);
             }
 
-            final filteredOrders = _filterOrders(allOrders);
+            final filteredOrders = _filterOrders(allOrders, isWorker: isWorker);
 
             return Column(
               children: [
-                _buildFilterBar(allOrders),
+                _buildFilterBar(allOrders, isWorker: isWorker),
                 Expanded(
                   child: filteredOrders.isEmpty
                       ? _buildEmptyState(context, isWorker, isFiltered: true)
@@ -173,18 +344,28 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
     );
   }
 
-  Widget _buildFilterBar(List<Booking> allOrders) {
-    final ongoingCount = allOrders.where((o) =>
-      o.status == BookingStatus.searching ||
-      o.status == BookingStatus.accepted ||
-      o.status == BookingStatus.arrived ||
-      o.status == BookingStatus.inProgress
-    ).length;
+  Widget _buildFilterBar(List<Booking> allOrders, {required bool isWorker}) {
+    final ongoingCount = allOrders
+        .where(
+          (o) =>
+              o.needsReview(isWorker: isWorker) ||
+              o.isAwaitingPayment ||
+              o.status == BookingStatus.searching ||
+              o.status == BookingStatus.accepted ||
+              o.status == BookingStatus.arrived ||
+              o.status == BookingStatus.inProgress,
+        )
+        .length;
 
-    final completedCount = allOrders.where((o) =>
-      o.status == BookingStatus.completed ||
-      o.status == BookingStatus.paid
-    ).length;
+    final completedCount = allOrders
+        .where(
+          (o) =>
+              !o.needsReview(isWorker: isWorker) &&
+              !o.isAwaitingPayment &&
+              (o.status == BookingStatus.completed ||
+                  o.status == BookingStatus.paid),
+        )
+        .length;
 
     final filters = [
       'All (${allOrders.length})',
@@ -308,7 +489,26 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
 
   Widget _buildOrderCard(BuildContext context, Booking order, bool isWorker, int index) {
     final scheme = Theme.of(context).colorScheme;
-    final status = _getStatusBadge(order.status, isWorker: isWorker);
+    final status = order.isCancelled && order.cancelledByWorker
+        ? _StatusBadgeConfig(
+            label: isWorker ? 'Declined' : 'Cancelled by Worker',
+            color: const Color(0xFFDC2626),
+            bgColor: const Color(0xFFFEE2E2),
+            icon: Icons.cancel_rounded,
+          )
+        : order.needsReview(isWorker: isWorker)
+            ? const _StatusBadgeConfig(
+                label: 'Review Pending',
+                color: Color(0xFFD97706),
+                bgColor: Color(0xFFFEF3C7),
+                icon: Icons.rate_review_rounded,
+              )
+            : _getStatusBadge(
+                order.status,
+                isWorker: isWorker,
+                rawStatus: order.rawStatus,
+                paymentStatus: order.paymentStatus,
+              );
     final catColor = _categoryColor(order.serviceCategory);
     final catIcon = _categoryIcon(order.serviceCategory);
 
@@ -361,7 +561,10 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                               if (order.serviceCategory != null && order.serviceCategory!.isNotEmpty)
                                 Flexible(
                                   child: Text(
-                                    order.serviceCategory!.toUpperCase(),
+                                    localizeCategory(
+                                      order.serviceCategory,
+                                      context.l10n.locale,
+                                    ).toUpperCase(),
                                     style: TextStyle(
                                       color: catColor,
                                       fontSize: 11,
@@ -481,41 +684,54 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
 
                 // Footer: Price + Quick Action Button
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isWorker ? 'Earnings estimate' : 'Total estimate',
-                          style: TextStyle(
-                            color: Theme.of(context).hintColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text(
-                              '₹${order.totalPrice.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primary,
-                              ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isWorker ? 'Earnings estimate' : 'Total estimate',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Theme.of(context).hintColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
                             ),
-                            if (order.paymentStatus != null) ...[
-                              const SizedBox(width: 8),
-                              _buildPaymentStatusChip(order.paymentStatus!),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  '₹${order.totalPrice.toStringAsFixed(0)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              if (order.paymentStatus != null) ...[
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: _buildPaymentStatusChip(order.paymentStatus!),
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-
-                    // Quick Action Button
-                    _buildQuickActionButton(context, order, isWorker),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: _buildQuickActionButton(context, order, isWorker),
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -597,8 +813,10 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
       final hasWorker = order.workerName?.isNotEmpty == true;
       final workerName = hasWorker ? order.workerName! : 'Assigning professional...';
       final showOtp = order.arrivalOtp != null &&
+          !order.isAwaitingPayment &&
           order.status != BookingStatus.completed &&
-          order.status != BookingStatus.paid;
+          order.status != BookingStatus.paid &&
+          !order.isCancelled;
 
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -672,11 +890,21 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
   }
 
   Widget _buildQuickActionButton(BuildContext context, Booking order, bool isWorker) {
-    final isOngoing = order.status == BookingStatus.accepted ||
-        order.status == BookingStatus.arrived ||
-        order.status == BookingStatus.inProgress;
+    if (order.isCancelled) {
+      return Text(
+        order.cancelledByWorker
+            ? (isWorker ? 'You declined this job' : 'Cancelled by worker')
+            : 'Order cancelled',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.red.shade700,
+        ),
+      );
+    }
 
-    if (isOngoing) {
+    if (!isWorker && order.isAwaitingPayment) {
+      final amount = order.totalPrice;
       return ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -687,22 +915,139 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           elevation: 0,
         ),
-        onPressed: () {
-          if (isWorker) {
-            context.push('${RouteNames.workerNavigation}?bookingId=${order.id}');
-          } else {
-            context.push('${RouteNames.customerTracking}?bookingId=${order.id}');
-          }
-        },
-        icon: Icon(
-          isWorker ? Icons.navigation_rounded : Icons.radar_rounded,
-          size: 14,
+        onPressed: () => context.push(
+          '${RouteNames.customerPayment}?bookingId=${order.id}&amount=$amount',
         ),
+        icon: const Icon(Icons.payments_rounded, size: 14),
         label: Text(
-          isWorker ? 'Navigate' : 'Track',
+          amount > 0 ? 'Pay Now (₹${amount.toInt()})' : 'Pay Now',
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
       );
+    }
+
+    if (order.needsReview(isWorker: isWorker)) {
+      return ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFD97706),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          elevation: 0,
+        ),
+        onPressed: () {
+          if (isWorker) {
+            context.push(
+              RouteNames.workerRatingPath(
+                order.id,
+                customerId: order.customerId,
+              ),
+            );
+          } else {
+            context.push(RouteNames.customerRatingPath(order.id));
+          }
+        },
+        icon: const Icon(Icons.rate_review_rounded, size: 14),
+        label: Text(
+          isWorker ? 'Rate Customer' : 'Give Review',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    final isOngoing = order.status == BookingStatus.accepted ||
+        order.status == BookingStatus.arrived ||
+        order.status == BookingStatus.inProgress;
+
+    if (isOngoing) {
+      if (isWorker) {
+        return ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            elevation: 0,
+          ),
+          onPressed: () async {
+            try {
+              await BookingsApiRepository().startNavigation(order.id);
+            } catch (_) {
+              // Map still opens; GPS unlock is backup.
+            }
+            if (!context.mounted) return;
+            context.push(
+              '${RouteNames.workerNavigation}?bookingId=${order.id}',
+            );
+          },
+          icon: const Icon(Icons.navigation_rounded, size: 14),
+          label: const Text(
+            'Navigate',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        );
+      }
+
+      // Customer: Track only after worker starts navigation.
+      if (order.workerHasStartedNavigation) {
+        return ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            elevation: 0,
+          ),
+          onPressed: () => context.push(
+            '${RouteNames.customerTracking}?bookingId=${order.id}',
+          ),
+          icon: const Icon(Icons.radar_rounded, size: 14),
+          label: const Text(
+            'Track',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        );
+      }
+
+      if (order.status == BookingStatus.accepted ||
+          order.status == BookingStatus.arrived) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF3C7),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Color(0xFFD97706)),
+                ),
+              ),
+              SizedBox(width: 6),
+              Text(
+                'Waiting…',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB45309),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
     }
 
     return OutlinedButton.icon(
@@ -776,7 +1121,32 @@ class _StatusBadgeConfig {
   });
 }
 
-_StatusBadgeConfig _getStatusBadge(BookingStatus status, {required bool isWorker}) {
+_StatusBadgeConfig _getStatusBadge(
+  BookingStatus status, {
+  required bool isWorker,
+  String? rawStatus,
+  String? paymentStatus,
+}) {
+  final raw = (rawStatus ?? '').toUpperCase();
+  final pay = (paymentStatus ?? '').toUpperCase();
+  final isPaid =
+      status == BookingStatus.paid || pay == 'PAID' || raw == 'PAID' || raw == 'PAYMENT_PAID';
+  final isAwaitingPayment = !isPaid &&
+      (raw == 'PAYMENT_PENDING' ||
+          raw == 'AWAITING_PAYMENT' ||
+          (status == BookingStatus.completed &&
+              raw != 'COMPLETED' &&
+              pay != 'PAID'));
+
+  if (isAwaitingPayment) {
+    return const _StatusBadgeConfig(
+      label: 'Payment Pending',
+      color: Color(0xFFD97706),
+      bgColor: Color(0xFFFEF3C7),
+      icon: Icons.payments_outlined,
+    );
+  }
+
   switch (status) {
     case BookingStatus.searching:
     case BookingStatus.draft:
@@ -808,7 +1178,7 @@ _StatusBadgeConfig _getStatusBadge(BookingStatus status, {required bool isWorker
         icon: Icons.construction_rounded,
       );
     case BookingStatus.completed:
-      case BookingStatus.rating:
+    case BookingStatus.rating:
       return const _StatusBadgeConfig(
         label: 'Completed',
         color: Color(0xFF059669),
@@ -821,6 +1191,13 @@ _StatusBadgeConfig _getStatusBadge(BookingStatus status, {required bool isWorker
         color: Color(0xFF059669),
         bgColor: Color(0xFFECFDF5),
         icon: Icons.verified_rounded,
+      );
+    case BookingStatus.cancelled:
+      return const _StatusBadgeConfig(
+        label: 'Cancelled',
+        color: Color(0xFFDC2626),
+        bgColor: Color(0xFFFEE2E2),
+        icon: Icons.cancel_rounded,
       );
   }
 }

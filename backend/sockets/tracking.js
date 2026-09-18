@@ -139,6 +139,49 @@ export const registerSocketHandlers = (io) => {
                     location: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] }
                 }).catch(() => {});
             }
+
+            // Backup unlock: first live GPS ping sets workerNavigationStartedAt
+            // so customer Track works even if POST /start-navigation never landed.
+            try {
+                const query = buildBookingQuery(bookingId);
+                if (!query) return;
+                const updated = await Booking.findOneAndUpdate(
+                    {
+                        ...query,
+                        workerNavigationStartedAt: null,
+                        status: {
+                            $in: [
+                                'APPROVED',
+                                'ACCEPTED',
+                                'ARRIVED',
+                                'ESTIMATION_GIVEN',
+                                'READY_TO_START',
+                                'IN_PROGRESS',
+                            ],
+                        },
+                    },
+                    { $set: { workerNavigationStartedAt: new Date() } },
+                    { new: true }
+                );
+                if (updated) {
+                    const customerId = String(updated.customer);
+                    const rooms = [
+                        ...getTargetBookingRooms(String(updated._id)),
+                        ...getTargetBookingRooms(updated.bookingId),
+                        `user_${customerId}`,
+                        `customer_${customerId}`,
+                    ];
+                    io.to(rooms).emit('booking_status_update', {
+                        bookingId: String(updated._id),
+                        canonicalBookingId: updated.bookingId,
+                        status: updated.status,
+                        workerNavigationStarted: true,
+                        workerNavigationStartedAt: updated.workerNavigationStartedAt,
+                    });
+                }
+            } catch (err) {
+                console.warn('workerNavigationStartedAt GPS unlock warning:', err.message);
+            }
         });
 
         // 3. User Disconnection

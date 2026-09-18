@@ -2,6 +2,7 @@ import Cooperative from '../models/Cooperative.js';
 import CooperativeSociety from '../models/CooperativeSociety.js';
 import User from '../models/User.js';
 import { fail, ok, isObjectId } from '../utils/http.js';
+import { syncWorkerToRedis } from '../utils/homeCache.js';
 
 const getOrCreateFederation = async () => {
     let doc = await Cooperative.findOne({ active: true });
@@ -230,6 +231,14 @@ export const adminAssignWorkerToSociety = async (req, res) => {
         const count = await User.countDocuments({ role: 'worker', 'workerProfile.society': societyId });
         society.activeMembersCount = count;
         await society.save();
+
+        // Instantly synchronize worker profile to Redis
+        await syncWorkerToRedis(worker._id, worker);
+
+        const io = req.app?.get('io');
+        if (io) {
+            io.emit('worker:updated', { worker });
+        }
 
         return ok(res, {
             data: {

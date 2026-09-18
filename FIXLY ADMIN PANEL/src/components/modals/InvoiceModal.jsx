@@ -113,6 +113,16 @@ export default function InvoiceModal({ payment, isOpen, onClose }) {
                 {payment.amount}
               </td>
             </tr>
+            {payment.couponCode && (
+              <tr style={{ borderBottom: '1px solid #f1f5f3', color: '#15803d', fontSize: '12px' }}>
+                <td style={{ padding: '6px 12px' }}>
+                  Coupon discount ({payment.couponCode})
+                </td>
+                <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '700' }}>
+                  −₹{payment.couponDiscount || 0}
+                </td>
+              </tr>
+            )}
             <tr style={{ borderBottom: '1px solid #f1f5f3', color: '#64748b', fontSize: '12px' }}>
               <td style={{ padding: '6px 12px' }}>Cooperative Welfare Reserve Allocation (5%)</td>
               <td style={{ padding: '6px 12px', textAlign: 'right' }}>{payment.welfareCut}</td>

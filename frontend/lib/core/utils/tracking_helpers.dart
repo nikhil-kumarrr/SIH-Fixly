@@ -15,10 +15,59 @@ abstract final class TrackingHelpers {
     return (math.atan2(y, x) * 180.0 / math.pi + 360.0) % 360.0;
   }
 
-  /// Calculates rotation angle for [assets/icons/bike_marker.png].
-  /// The bike artwork faces North (0° up), so rotation matches bearing directly.
+  /// Bike artwork faces North (0° up). Rotation = travel bearing on map.
   static double bikeIconRotation(MapCoordinate from, MapCoordinate to) {
     return bearingDegrees(from, to);
+  }
+
+  /// Bearing along [route] toward destination — not crow-flies / flipped GPS.
+  static double? headingAlongRoute(
+    MapCoordinate position,
+    List<MapCoordinate> route, {
+    int lookAheadPoints = 3,
+  }) {
+    if (route.length < 2) return null;
+
+    var closestIdx = 0;
+    var minDist = double.infinity;
+    for (var i = 0; i < route.length; i++) {
+      final d = distanceMeters(position, route[i]);
+      if (d < minDist) {
+        minDist = d;
+        closestIdx = i;
+      }
+    }
+
+    // Prefer forward point so bike faces travel direction on the line.
+    final aheadIdx = math.min(closestIdx + lookAheadPoints, route.length - 1);
+    if (aheadIdx <= closestIdx) {
+      if (closestIdx > 0) {
+        return bearingDegrees(route[closestIdx - 1], route[closestIdx]);
+      }
+      return null;
+    }
+    return bearingDegrees(route[closestIdx], route[aheadIdx]);
+  }
+
+  /// Prefer route tangent, then GPS heading, then movement bearing.
+  static double resolveBikeHeading({
+    required MapCoordinate position,
+    MapCoordinate? previous,
+    List<MapCoordinate> route = const [],
+    double? reportedHeading,
+  }) {
+    final along = headingAlongRoute(position, route);
+    if (along != null) return normalizeHeading(along);
+
+    if (reportedHeading != null && reportedHeading > 0) {
+      return normalizeHeading(reportedHeading);
+    }
+
+    if (previous != null && distanceMeters(previous, position) >= 2.0) {
+      return bearingDegrees(previous, position);
+    }
+
+    return normalizeHeading(position.heading ?? reportedHeading ?? 0);
   }
 
   /// Normalizes any heading or bearing to 0..360 range.
@@ -36,6 +85,18 @@ abstract final class TrackingHelpers {
     final a = math.sin(dLat / 2.0) * math.sin(dLat / 2.0) +
         math.cos(lat1) * math.cos(lat2) * math.sin(dLng / 2.0) * math.sin(dLng / 2.0);
     return earthRadius * 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a));
+  }
+
+  /// Ease-in-out for smoother bike travel (t in 0..1).
+  static double easeInOut(double t) {
+    final x = t.clamp(0.0, 1.0);
+    return x < 0.5 ? 2 * x * x : 1 - math.pow(-2 * x + 2, 2) / 2;
+  }
+
+  /// Duration for animating [meters] at a calm visual speed (~7 m/s).
+  static Duration smoothMoveDuration(double meters) {
+    final ms = (meters / 7.0 * 1000.0).round().clamp(700, 4500);
+    return Duration(milliseconds: ms);
   }
 
   /// Linearly interpolates between two coordinates with optional heading interpolation.

@@ -12,8 +12,8 @@ abstract final class AppConstants {
   static const onboardingTotalSteps = 3;
   static const transitionDurationMs = 250;
 
-  /// Flip true to show Live Talk / mic / Hey Flexi voice entry points again.
-  static const voiceAiEnabled = false;
+  /// Flip true to show Live Talk / mic / Hey Fixly voice entry points again.
+  static const voiceAiEnabled = true;
 }
 
 abstract final class AppImages {

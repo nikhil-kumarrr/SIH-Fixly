@@ -33,6 +33,10 @@ abstract final class RouteNames {
   static const customerPayment = '/customer/payment';
   static const customerPayments = '/customer/payments';
   static const customerRating = '/customer/rating';
+
+  static String customerRatingPath(String bookingId) =>
+      '/customer/rating?bookingId=$bookingId';
+
   static const customerHomeBooking = '/customer/home-booking';
   static const customerAiHelper = '/customer/ai-helper';
   static const customerAiChat = '/customer/ai-chat';
@@ -74,6 +78,14 @@ abstract final class RouteNames {
   static const workerOtpEntry = '/worker/otp-entry';
   static const workerAddParts = '/worker/add-parts';
   static const workerRating = '/worker/rating';
+
+  static String workerRatingPath(String bookingId, {String? customerId}) {
+    final q = StringBuffer('bookingId=$bookingId');
+    if (customerId != null && customerId.isNotEmpty) {
+      q.write('&customerId=$customerId');
+    }
+    return '/worker/rating?$q';
+  }
 
   static const customerWorkerArrived = '/customer/worker-arrived';
 

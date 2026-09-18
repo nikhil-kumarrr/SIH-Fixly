@@ -16,10 +16,12 @@ const ensureMessaging = () => {
 
 export const isPermanentTokenError = (error) => invalidTokenCodes.has(error?.code);
 
-export const sendToToken = async ({ token, title, body, data = {}, android, apns }) => {
+export const sendToToken = async ({ token, title, body, data = {}, android, apns, dataOnly = false }) => {
     const message = {
         token,
-        notification: { title, body },
+        // Data-only messages guarantee the Flutter background isolate runs (so CallKit shows)
+        // and prevent the OS from drawing a second tray banner alongside the call UI.
+        ...(dataOnly ? {} : { notification: { title, body } }),
         data: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)])),
         ...(android ? { android } : {}),
         ...(apns ? { apns } : {}),

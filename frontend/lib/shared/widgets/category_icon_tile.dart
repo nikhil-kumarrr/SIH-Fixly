@@ -84,18 +84,6 @@ class CategoryIconTile extends StatelessWidget {
                             size: 28,
                           ),
                         ),
-                      Positioned(
-                        right: 6,
-                        bottom: 6,
-                        child: Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: AppColors.accent,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -104,9 +92,9 @@ class CategoryIconTile extends StatelessWidget {
               Text(
                 name,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: context.ink,
-                    ),
+                  fontWeight: FontWeight.w500,
+                  color: context.ink,
+                ),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

@@ -1,6 +1,22 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/admin';
+let envBase = import.meta.env.VITE_API_URL;
+const isLocal =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+// When deployed on HTTPS (e.g. Netlify) and backend is HTTP, route through the Netlify reverse proxy
+// (/api/admin) so the browser doesn't block it with "Mixed Content" or CORS errors.
+if (
+  typeof window !== 'undefined' &&
+  window.location.protocol === 'https:' &&
+  envBase &&
+  envBase.startsWith('http://')
+) {
+  envBase = '/api/admin';
+}
+
+const API_BASE_URL = envBase || (isLocal ? 'http://localhost:8000/api/admin' : '/api/admin');
 
 const adminApi = axios.create({
   baseURL: API_BASE_URL,
@@ -132,6 +148,10 @@ export const api = {
   },
   deleteService: async (id) => {
     const res = await adminApi.delete(`/services/${id}`);
+    return res.data;
+  },
+  syncServicesCache: async () => {
+    const res = await adminApi.post('/services/sync-cache');
     return res.data;
   },
 
@@ -373,19 +393,19 @@ export const api = {
 
   // Emergency Contacts
   getEmergencyContacts: async () => {
-    const res = await adminApi.get('/admin/emergency/contacts');
+    const res = await adminApi.get('/emergency/contacts');
     return res.data;
   },
   createEmergencyContact: async (data) => {
-    const res = await adminApi.post('/admin/emergency/contacts', data);
+    const res = await adminApi.post('/emergency/contacts', data);
     return res.data;
   },
   updateEmergencyContact: async (id, data) => {
-    const res = await adminApi.put(`/admin/emergency/contacts/${id}`, data);
+    const res = await adminApi.put(`/emergency/contacts/${id}`, data);
     return res.data;
   },
   deleteEmergencyContact: async (id) => {
-    const res = await adminApi.delete(`/admin/emergency/contacts/${id}`);
+    const res = await adminApi.delete(`/emergency/contacts/${id}`);
     return res.data;
   },
 

@@ -63,77 +63,7 @@ class CategoryScopeDefinition {
   final List<ServiceFaq> faqs;
 }
 
-/// Cooperative Federation model for worker affiliation.
-class CooperativeFederationInfo {
-  const CooperativeFederationInfo({
-    required this.id,
-    required this.name,
-    required this.state,
-    required this.regNo,
-    this.badge = 'Cooperative Certified',
-  });
-
-  final String id;
-  final String name;
-  final String state;
-  final String regNo;
-  final String badge;
-}
-
 abstract final class ServiceScopeData {
-  /// Predefined Cooperative Federations available for worker onboarding.
-  static const List<CooperativeFederationInfo> federations = [
-    CooperativeFederationInfo(
-      id: 'fed_nlcf',
-      name: 'National Labour Cooperative Federation (NLCF)',
-      state: 'National / All India',
-      regNo: 'MSCS/CR/01/92',
-      badge: 'NLCF Affiliated',
-    ),
-    CooperativeFederationInfo(
-      id: 'fed_delhi',
-      name: 'Delhi Urban Workers & Trades Cooperative Society',
-      state: 'Delhi NCR',
-      regNo: 'DL-COOP-2024-88',
-      badge: 'Delhi Federation',
-    ),
-    CooperativeFederationInfo(
-      id: 'fed_maha',
-      name: 'Maharashtra Shramik Sahakari Sanstha Maryadit',
-      state: 'Maharashtra',
-      regNo: 'MH-BOM-CS-492',
-      badge: 'Maharashtra Shramik',
-    ),
-    CooperativeFederationInfo(
-      id: 'fed_karnataka',
-      name: 'Karnataka Gig & Technical Workers Sahakara Mahamandal',
-      state: 'Karnataka',
-      regNo: 'KA-BLR-FED-104',
-      badge: 'Karnataka Federation',
-    ),
-    CooperativeFederationInfo(
-      id: 'fed_telangana',
-      name: 'Telangana Shramik Sahakara Sangham Federation',
-      state: 'Telangana',
-      regNo: 'TG-HYD-COOP-331',
-      badge: 'Telangana Sahakara',
-    ),
-    CooperativeFederationInfo(
-      id: 'fed_tamilnadu',
-      name: 'Tamil Nadu Cooperative Labor & Trades Federation',
-      state: 'Tamil Nadu',
-      regNo: 'TN-CHN-FED-712',
-      badge: 'TN Cooperative',
-    ),
-    CooperativeFederationInfo(
-      id: 'fed_bengal',
-      name: 'West Bengal Artisan & Service Cooperative Union',
-      state: 'West Bengal',
-      regNo: 'WB-KOL-COOP-559',
-      badge: 'WB Cooperative',
-    ),
-  ];
-
   static const List<CategoryScopeDefinition> definitions = [
     // 1. Domestic Helper / Cleaning
     CategoryScopeDefinition(
@@ -323,8 +253,16 @@ abstract final class ServiceScopeData {
           answer: 'No, the base price covers diagnostic & labour. Any spare parts (switches, MCBs, wires) can be provided by you or procured with customer approval.',
         ),
         ServiceFaq(
-          question: 'Is the electrical work covered by warranty?',
-          answer: 'Yes, Fixly cooperative workers provide a 14-day service warranty on labour and connections.',
+          question: 'Do I need to turn off the main power?',
+          answer: 'The worker isolates the relevant circuit at the MCB before starting. Keep the main distribution board accessible and clear of clutter.',
+        ),
+        ServiceFaq(
+          question: 'How long does a typical visit take?',
+          answer: 'Most switch, socket, or fan jobs finish in about 45–90 minutes after diagnosis. Larger wiring jobs may need more time, which the worker will confirm before starting.',
+        ),
+        ServiceFaq(
+          question: 'What if the issue is not fixed in one visit?',
+          answer: 'The worker will explain findings on site. You can rebook or extend the visit through the app with transparent labour pricing.',
         ),
       ],
     ),

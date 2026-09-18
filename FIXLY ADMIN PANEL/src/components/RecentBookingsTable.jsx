@@ -123,9 +123,10 @@ export default function RecentBookingsTable({ onSelectBooking }) {
       </div>
 
       {/* Table Container */}
-      <div style={{ overflowX: 'auto', flex: 1 }}>
+      <div className="table-responsive" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', flex: 1, width: '100%' }}>
         <table
           style={{
+            minWidth: '600px',
             width: '100%',
             borderCollapse: 'collapse',
             textAlign: 'left',
@@ -138,13 +139,14 @@ export default function RecentBookingsTable({ onSelectBooking }) {
                 color: '#718278',
                 fontSize: '12px',
                 fontWeight: '600',
+                whiteSpace: 'nowrap',
               }}
             >
-              <th style={{ padding: '8px 12px 10px 4px' }}>Booking ID</th>
-              <th style={{ padding: '8px 12px 10px 12px' }}>Customer</th>
-              <th style={{ padding: '8px 12px 10px 12px' }}>Service</th>
-              <th style={{ padding: '8px 12px 10px 12px' }}>Worker</th>
-              <th style={{ padding: '8px 4px 10px 12px', textAlign: 'right' }}>Status</th>
+              <th style={{ padding: '8px 12px 10px 4px', whiteSpace: 'nowrap' }}>Booking ID</th>
+              <th style={{ padding: '8px 12px 10px 12px', whiteSpace: 'nowrap' }}>Customer</th>
+              <th style={{ padding: '8px 12px 10px 12px', whiteSpace: 'nowrap' }}>Service</th>
+              <th style={{ padding: '8px 12px 10px 12px', whiteSpace: 'nowrap' }}>Worker</th>
+              <th style={{ padding: '8px 4px 10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -157,12 +159,13 @@ export default function RecentBookingsTable({ onSelectBooking }) {
                   fontSize: '13px',
                   cursor: 'pointer',
                   transition: 'background-color 0.15s ease',
+                  whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f9fbf9')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
                 {/* Booking ID */}
-                <td style={{ padding: '12px 12px 12px 4px' }}>
+                <td style={{ padding: '12px 12px 12px 4px', whiteSpace: 'nowrap' }}>
                   <span
                     style={{
                       color: 'var(--text-link)',

@@ -11,7 +11,13 @@ import 'package:video_player/video_player.dart';
 
 import '../../../../app/router/route_names.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/network/api_exception.dart';
+import '../../../../core/network/customer_realtime_service.dart';
+import '../../../../core/network/worker_realtime_service.dart';
+import '../../../../core/navigation/screen_refresh.dart';
+import '../../../../core/utils/rating_format.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../services/webrtc_call_service.dart';
@@ -29,23 +35,200 @@ class BookingDetailPage extends StatefulWidget {
   State<BookingDetailPage> createState() => _BookingDetailPageState();
 }
 
-class _BookingDetailPageState extends State<BookingDetailPage> {
-  late Future<Booking> _bookingFuture;
+class _BookingDetailPageState extends State<BookingDetailPage>
+    with RefreshWhenNavigatedTo {
+  final BookingsApiRepository _bookings = BookingsApiRepository();
+  Booking? _booking;
+  Object? _error;
+  bool _loading = true;
+  bool _refreshing = false;
+  Timer? _pollTimer;
+  StreamSubscription<Map<String, dynamic>>? _statusSub;
+  StreamSubscription<bool>? _connSub;
+
+  @override
+  List<String> get refreshRoutePaths => [RouteNames.bookingDetail];
+
+  @override
+  void onScreenRefresh() {
+    unawaited(_load());
+  }
 
   @override
   void initState() {
     super.initState();
-    _bookingFuture = _loadBooking();
+    unawaited(_load(initial: true));
   }
 
-  Future<Booking> _loadBooking() =>
-      BookingsApiRepository().getById(widget.bookingId);
+  @override
+  void dispose() {
+    _stopLive();
+    super.dispose();
+  }
 
-  void _retry() {
-    setState(() {
-      _bookingFuture = _loadBooking();
+  bool _isTerminal(Booking b) {
+    if (b.isCancelled) return true;
+    final raw = (b.rawStatus ?? '').toUpperCase();
+    if (raw == 'CANCELLED' || raw == 'PAID') return true;
+    return b.status == BookingStatus.paid || b.status == BookingStatus.rating;
+  }
+
+  bool _eventMatches(Map<String, dynamic> map, Booking booking) {
+    final eventId = map['bookingId']?.toString();
+    final canonical = map['canonicalBookingId']?.toString();
+    return eventId == booking.id ||
+        canonical == booking.id ||
+        eventId == booking.displayId ||
+        canonical == booking.displayId;
+  }
+
+  Future<void> _load({bool initial = false}) async {
+    if (initial) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final booking = await _bookings.getById(
+        widget.bookingId,
+        serviceTitle: _booking?.serviceTitle ?? 'Service',
+        forceNetwork: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _booking = booking;
+        _loading = false;
+        _error = null;
+      });
+      _bindLive();
+    } catch (e) {
+      if (!mounted) return;
+      if (initial || _booking == null) {
+        setState(() {
+          _error = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshBooking() async {
+    final current = _booking;
+    if (_refreshing || current == null) return;
+    _refreshing = true;
+    try {
+      final updated = await _bookings.getById(
+        current.id,
+        serviceTitle: current.serviceTitle,
+        forceNetwork: true,
+      );
+      if (!mounted) return;
+      final changed = updated.status != current.status ||
+          updated.rawStatus != current.rawStatus ||
+          updated.workerHasStartedNavigation !=
+              current.workerHasStartedNavigation ||
+          updated.workerNavigationStartedAt !=
+              current.workerNavigationStartedAt ||
+          updated.paymentStatus != current.paymentStatus ||
+          updated.arrivalOtp != current.arrivalOtp ||
+          updated.workerName != current.workerName ||
+          updated.workerId != current.workerId ||
+          updated.jobStartedAt != current.jobStartedAt ||
+          updated.jobCompletedAt != current.jobCompletedAt ||
+          updated.workerEstimation != current.workerEstimation ||
+          updated.totalAmount != current.totalAmount ||
+          updated.extraPartsTotal != current.extraPartsTotal;
+      if (!changed) return;
+      setState(() => _booking = updated);
+      if (_isTerminal(updated)) {
+        _stopLive();
+      }
+    } catch (_) {
+      // Next socket event / poll tick retries.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  void _stopLive() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _statusSub?.cancel();
+    _statusSub = null;
+    _connSub?.cancel();
+    _connSub = null;
+  }
+
+  void _startPoll() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_refreshBooking());
     });
   }
+
+  void _bindLive() {
+    _stopLive();
+    final booking = _booking;
+    if (booking == null || !mounted) return;
+    if (_isTerminal(booking)) return;
+
+    final role =
+        context.read<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
+    final userId = context.read<AppSessionCubit>().currentUser?.id;
+
+    if (role == UserRole.worker) {
+      if (userId != null && userId.isNotEmpty) {
+        WorkerRealtimeService.instance.initForWorker(userId);
+      }
+      WorkerRealtimeService.instance.trackBooking(booking.id);
+
+      _statusSub =
+          WorkerRealtimeService.instance.bookingStatusStream.listen((map) {
+        if (_booking == null || !_eventMatches(map, _booking!)) return;
+        unawaited(_refreshBooking());
+      });
+
+      _startPoll();
+      _connSub =
+          WorkerRealtimeService.instance.connectionStream.listen((connected) {
+        if (!mounted || _booking == null) return;
+        if (connected) {
+          WorkerRealtimeService.instance.trackBooking(_booking!.id);
+          unawaited(_refreshBooking());
+        }
+        if (_pollTimer == null) _startPoll();
+      });
+      return;
+    }
+
+    if (userId != null && userId.isNotEmpty) {
+      CustomerRealtimeService.instance.initForCustomer(userId);
+    }
+    CustomerRealtimeService.instance.trackBooking(booking.id);
+
+    // Socket → instant full-screen refresh
+    _statusSub =
+        CustomerRealtimeService.instance.bookingStatusStream.listen((map) {
+      if (_booking == null || !_eventMatches(map, _booking!)) return;
+      unawaited(_refreshBooking());
+    });
+
+    // Poll every 5s as backup when socket down / silent
+    _startPoll();
+    _connSub =
+        CustomerRealtimeService.instance.connectionStream.listen((connected) {
+      if (!mounted || _booking == null) return;
+      if (connected) {
+        CustomerRealtimeService.instance.trackBooking(_booking!.id);
+        unawaited(_refreshBooking());
+      }
+      // Keep 5s poll running either way — covers "connected but no events".
+      if (_pollTimer == null) _startPoll();
+    });
+  }
+
+  void _retry() => unawaited(_load(initial: _booking == null));
 
   @override
   Widget build(BuildContext context) {
@@ -53,21 +236,14 @@ class _BookingDetailPageState extends State<BookingDetailPage> {
       title: 'Booking Details',
       padding: EdgeInsets.zero,
       showBack: true,
-      body: FutureBuilder<Booking>(
-        future: _bookingFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError || !snapshot.hasData) {
-            return _ErrorState(onRetry: _retry);
-          }
-          return _BookingDetails(
-            booking: snapshot.data!,
-            onRefresh: _retry,
-          );
-        },
-      ),
+      body: _loading && _booking == null
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null && _booking == null
+              ? _ErrorState(onRetry: _retry)
+              : _BookingDetails(
+                  booking: _booking!,
+                  onRefresh: _refreshBooking,
+                ),
     );
   }
 }
@@ -79,7 +255,7 @@ class _BookingDetails extends StatelessWidget {
   });
 
   final Booking booking;
-  final VoidCallback? onRefresh;
+  final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -87,13 +263,50 @@ class _BookingDetails extends StatelessWidget {
     final isWorker = role == UserRole.worker;
 
     return RefreshIndicator(
-      onRefresh: () async => onRefresh?.call(),
+      onRefresh: () async {
+        await onRefresh?.call();
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
           // 1. Hero Header Card (Category, Title, Status, Schedule)
           _HeroHeaderCard(booking: booking, isWorker: isWorker),
           const SizedBox(height: 16),
+
+          if (booking.status == BookingStatus.accepted ||
+              booking.status == BookingStatus.arrived ||
+              booking.status == BookingStatus.inProgress) ...[
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  await BookingsApiRepository().triggerSos(booking.id);
+                  if (context.mounted) {
+                    ToastUtils.showSuccess(
+                      context: context,
+                      message: 'SOS alert sent for this booking',
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ToastUtils.showError(
+                      context: context,
+                      message: e.toString(),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.sos_rounded, color: Colors.red),
+              label: const Text(
+                'Trigger in-job SOS alert',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.red),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
 
           // 2. Who's Working / Customer Info (Role-adaptive)
           _RoleAdaptivePartyCard(booking: booking, isWorker: isWorker),
@@ -125,7 +338,7 @@ class _BookingDetails extends StatelessWidget {
           const SizedBox(height: 16),
 
           // 7. Payment Summary & Pricing
-          _PaymentSummaryCard(booking: booking),
+          _PaymentSummaryCard(booking: booking, isWorker: isWorker),
           const SizedBox(height: 24),
 
           // 8. Actions (Role and status specific)
@@ -151,9 +364,33 @@ class _HeroHeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final status = _getStatusBadge(booking.status, isWorker: isWorker);
+    final status = booking.cancelledByWorker && !isWorker
+        ? const _StatusBadgeConfig(
+            label: 'Cancelled by Worker',
+            color: Color(0xFFDC2626),
+            bgColor: Color(0xFFFEE2E2),
+            icon: Icons.cancel_rounded,
+          )
+        : booking.needsReview(isWorker: isWorker)
+            ? const _StatusBadgeConfig(
+                label: 'Review Pending',
+                color: Color(0xFFD97706),
+                bgColor: Color(0xFFFEF3C7),
+                icon: Icons.rate_review_rounded,
+              )
+            : _getStatusBadge(
+                booking.status,
+                isWorker: isWorker,
+                rawStatus: booking.rawStatus,
+                paymentStatus: booking.paymentStatus,
+              );
     final catColor = _categoryColor(booking.serviceCategory);
     final catIcon = _categoryIcon(booking.serviceCategory);
+    final catLabel = () {
+      final localized =
+          localizeCategory(booking.serviceCategory, context.l10n.locale);
+      return localized.isNotEmpty ? localized : 'Service';
+    }();
     final scheduled = booking.scheduledAt;
 
     return Container(
@@ -217,7 +454,7 @@ class _HeroHeaderCard extends StatelessWidget {
                             Icon(catIcon, size: 14, color: Colors.white),
                             const SizedBox(width: 6),
                             Text(
-                              booking.serviceCategory ?? 'Service',
+                              catLabel,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -256,7 +493,7 @@ class _HeroHeaderCard extends StatelessWidget {
                             Icon(catIcon, size: 14, color: catColor),
                             const SizedBox(width: 6),
                             Text(
-                              booking.serviceCategory ?? 'Service',
+                              catLabel,
                               style: TextStyle(
                                 color: catColor,
                                 fontSize: 12,
@@ -286,13 +523,17 @@ class _HeroHeaderCard extends StatelessWidget {
                 // Booking ID with copy button
                 Row(
                   children: [
-                    Text(
-                      booking.displayId == null
-                          ? 'Booking #${booking.id}'
-                          : '${booking.displayId} • ${booking.id.length > 8 ? booking.id.substring(booking.id.length - 8) : booking.id}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.hintColor,
-                        fontWeight: FontWeight.w500,
+                    Expanded(
+                      child: Text(
+                        booking.displayId == null
+                            ? 'Booking #${booking.id}'
+                            : '${booking.displayId} • ${booking.id.length > 8 ? booking.id.substring(booking.id.length - 8) : booking.id}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.hintColor,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -317,106 +558,48 @@ class _HeroHeaderCard extends StatelessWidget {
                 const Divider(height: 1),
                 const SizedBox(height: 14),
 
-                // Scheduled & Estimated Time Info Row
+                // Scheduled Time
                 Row(
                   children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.event_rounded,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.event_rounded,
-                              size: 18,
-                              color: AppColors.primary,
+                          Text(
+                            'Scheduled Time',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.hintColor,
+                              fontSize: 11,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Scheduled Time',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.hintColor,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  scheduled != null
-                                      ? DateFormat('d MMM, h:mm a').format(scheduled)
-                                      : 'Immediate / As soon as available',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                          const SizedBox(height: 2),
+                          Text(
+                            scheduled != null
+                                ? DateFormat('d MMM, h:mm a').format(scheduled)
+                                : 'Immediate / As soon as available',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
-                    if (booking.estimatedTime != null &&
-                        booking.estimatedTime!.isNotEmpty) ...[
-                      Container(
-                        height: 32,
-                        width: 1,
-                        color: theme.dividerColor.withValues(alpha: 0.5),
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF059669).withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.timelapse_rounded,
-                                size: 18,
-                                color: Color(0xFF059669),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Est. Duration',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.hintColor,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    booking.estimatedTime!,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ],
@@ -440,23 +623,38 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
   final Booking booking;
   final bool isWorker;
 
-  Future<void> _makePhoneCall(BuildContext context, String? phone) async {
-    if (phone == null || phone.trim().isEmpty) {
-      ToastUtils.showToast(context: context, message: 'Phone number not available');
+  Future<void> _callCustomerViaWebRtc(BuildContext context) async {
+    final bookingId = booking.id;
+    if (bookingId.isEmpty) {
+      ToastUtils.showToast(context: context, message: 'Booking ID not available');
       return;
     }
-    final cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
-    final uri = Uri.parse('tel:$cleanPhone');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ToastUtils.showToast(context: context, message: 'Could not launch dialer: $phone');
-      }
+    final peerName = booking.customerName ?? 'Customer';
+    final peerAvatar = booking.customerAvatar;
+    final serviceTitle = booking.serviceTitle;
+
+    context.push(
+      RouteNames.call,
+      extra: {
+        'bookingId': bookingId,
+        'peerName': peerName,
+        'peerRole': 'customer',
+        'peerAvatar': peerAvatar,
+        'serviceTitle': serviceTitle,
+        'isIncoming': false,
+      },
+    );
+
+    final success = await WebRTCCallService.instance.startCall(
+      bookingId: bookingId,
+      expectedPeerName: peerName,
+      expectedPeerRole: 'customer',
+      expectedPeerAvatar: peerAvatar,
+      expectedServiceTitle: serviceTitle,
+    );
+
+    if (!success && context.mounted) {
+      ToastUtils.showToast(context: context, message: 'Could not connect call');
     }
   }
 
@@ -597,9 +795,8 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (booking.customerPhone != null && booking.customerPhone!.isNotEmpty)
-                  ElevatedButton.icon(
-                    onPressed: () => _makePhoneCall(context, booking.customerPhone),
+                ElevatedButton.icon(
+                    onPressed: () => _callCustomerViaWebRtc(context),
                     icon: const Icon(Icons.call_rounded, size: 16),
                     label: const Text('Call'),
                     style: ElevatedButton.styleFrom(
@@ -773,7 +970,10 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Row(
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -784,14 +984,14 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                               color: const Color(0xFFFEF3C7),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.star_rounded, size: 12, color: Color(0xFFD97706)),
-                                SizedBox(width: 2),
+                                const Icon(Icons.star_rounded, size: 12, color: Color(0xFFD97706)),
+                                const SizedBox(width: 2),
                                 Text(
-                                  '4.9',
-                                  style: TextStyle(
+                                  formatRating(booking.workerRating),
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     color: Color(0xFFB45309),
@@ -800,7 +1000,6 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 6),
                           Text(
                             'Fixly Verified Partner',
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -1914,6 +2113,25 @@ class _BookingProgressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final raw = (booking.rawStatus ?? '').toUpperCase();
+    final isPaid = booking.status == BookingStatus.paid ||
+        (booking.paymentStatus ?? '').toUpperCase() == 'PAID' ||
+        raw == 'PAID' ||
+        raw == 'PAYMENT_PAID';
+    final isAwaitingPayment = !isPaid &&
+        (raw == 'PAYMENT_PENDING' ||
+            raw == 'AWAITING_PAYMENT' ||
+            (booking.status == BookingStatus.completed &&
+                raw != 'COMPLETED' &&
+                (booking.paymentStatus ?? '').toUpperCase() != 'PAID'));
+    final workStarted = booking.jobStartedAt != null ||
+        booking.status == BookingStatus.inProgress ||
+        isAwaitingPayment ||
+        isPaid;
+    final arrivedOrLater = booking.status == BookingStatus.arrived ||
+        booking.status == BookingStatus.inProgress ||
+        isAwaitingPayment ||
+        isPaid;
 
     final steps = [
       _ProgressStep(
@@ -1938,33 +2156,31 @@ class _BookingProgressCard extends StatelessWidget {
       _ProgressStep(
         title: 'Technician Arrived',
         subtitle: 'At customer location',
-        isDone: booking.status == BookingStatus.arrived ||
-            booking.status == BookingStatus.inProgress ||
-            booking.status == BookingStatus.completed ||
-            booking.status == BookingStatus.paid,
-        isActive: booking.status == BookingStatus.arrived,
+        isDone: arrivedOrLater,
+        isActive: booking.status == BookingStatus.arrived && !isAwaitingPayment,
       ),
       _ProgressStep(
         title: 'Work In Progress',
         subtitle: booking.jobStartedAt != null
             ? DateFormat('h:mm a').format(booking.jobStartedAt!)
             : 'Service execution',
-        isDone: booking.jobStartedAt != null ||
-            booking.status == BookingStatus.inProgress ||
-            booking.status == BookingStatus.completed ||
-            booking.status == BookingStatus.paid,
+        isDone: workStarted,
         isActive: booking.status == BookingStatus.inProgress,
       ),
       _ProgressStep(
-        title: 'Completed & Invoiced',
-        subtitle: booking.jobCompletedAt != null
-            ? DateFormat('d MMM, h:mm a').format(booking.jobCompletedAt!)
-            : 'Finished',
-        isDone: booking.jobCompletedAt != null ||
-            booking.status == BookingStatus.completed ||
-            booking.status == BookingStatus.paid,
-        isActive: booking.status == BookingStatus.completed ||
-            booking.status == BookingStatus.paid,
+        title: isPaid
+            ? 'Paid & Complete'
+            : (isAwaitingPayment ? 'Awaiting Payment' : 'Completed & Invoiced'),
+        subtitle: isPaid
+            ? (booking.jobCompletedAt != null
+                ? DateFormat('d MMM, h:mm a').format(booking.jobCompletedAt!)
+                : 'Payment received')
+            : (isAwaitingPayment
+                ? 'Invoice ready — pay to finish'
+                : 'Not finished yet'),
+        // Only tick when customer actually paid — not on PAYMENT_PENDING.
+        isDone: isPaid,
+        isActive: isAwaitingPayment,
       ),
     ];
 
@@ -2133,9 +2349,13 @@ class _ProgressStepRow extends StatelessWidget {
 // 7. Payment Summary & Pricing
 // ---------------------------------------------------------------------------
 class _PaymentSummaryCard extends StatelessWidget {
-  const _PaymentSummaryCard({required this.booking});
+  const _PaymentSummaryCard({
+    required this.booking,
+    this.isWorker = false,
+  });
 
   final Booking booking;
+  final bool isWorker;
 
   @override
   Widget build(BuildContext context) {
@@ -2143,6 +2363,10 @@ class _PaymentSummaryCard extends StatelessWidget {
     final isPaid = booking.status == BookingStatus.paid ||
         (booking.paymentStatus != null &&
             booking.paymentStatus!.toUpperCase() == 'PAID');
+    final platform = booking.platformFee ?? booking.invoice?.platformFee ?? 0.0;
+    final customerTotal =
+        booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice;
+    final workerTakeHome = booking.workerPayout;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2167,37 +2391,47 @@ class _PaymentSummaryCard extends StatelessWidget {
             children: [
               const Icon(Icons.receipt_long_rounded, size: 20, color: AppColors.primary),
               const SizedBox(width: 8),
-              Text(
-                'Payment Breakdown',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  isWorker ? 'Payout Breakdown' : 'Payment Breakdown',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isPaid ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isPaid ? Icons.check_circle_rounded : Icons.pending_rounded,
-                      size: 12,
-                      color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isPaid ? 'PAID' : 'PAYMENT PENDING',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isPaid ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isPaid ? Icons.check_circle_rounded : Icons.pending_rounded,
+                        size: 12,
                         color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          isPaid ? 'PAID' : 'PAYMENT PENDING',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -2206,18 +2440,24 @@ class _PaymentSummaryCard extends StatelessWidget {
 
           _ChargeRow(
             label: 'Base Service Fee',
-            amount: booking.baseServiceFee ?? booking.estimatedPrice,
+            amount: booking.workerEstimation != null &&
+                    booking.workerEstimation!.lockedBaseFee > 0
+                ? booking.workerEstimation!.lockedBaseFee
+                : (booking.invoice?.baseServiceFee ??
+                    booking.baseServiceFee ??
+                    booking.estimatedPrice),
           ),
-          if ((booking.platformFee ?? 0) > 0)
-            _ChargeRow(
-              label: 'Platform & Safety Fee',
-              amount: booking.platformFee,
-            ),
-          if ((booking.extraPartsTotal ?? 0) > 0 || booking.addOns.isNotEmpty) ...[
+          if ((booking.extraPartsTotal ?? 0) > 0 ||
+              (booking.workerEstimation?.partsEstimate ?? 0) > 0 ||
+              booking.addOns.isNotEmpty) ...[
             _ChargeRow(
               label: 'Extra Parts & Materials',
-              amount: booking.extraPartsTotal ??
-                  booking.addOns.fold<double>(0.0, (sum, a) => sum + (a.price * a.quantity)),
+              amount: booking.workerEstimation?.partsEstimate ??
+                  booking.extraPartsTotal ??
+                  booking.addOns.fold<double>(
+                    0.0,
+                    (sum, a) => sum + (a.price * a.quantity),
+                  ),
             ),
             for (final part in booking.addOns)
               Padding(
@@ -2237,10 +2477,22 @@ class _PaymentSummaryCard extends StatelessWidget {
                 ),
               ),
           ],
+          if ((booking.workerEstimation?.serviceCharge ?? 0) > 0)
+            _ChargeRow(
+              label: 'Service charge (extra work)',
+              amount: booking.workerEstimation!.serviceCharge,
+            ),
           if ((booking.urgentFee ?? 0) > 0)
             _ChargeRow(
               label: 'Emergency / Urgent Fee',
               amount: booking.urgentFee,
+            ),
+          if (platform > 0)
+            _ChargeRow(
+              label: isWorker
+                  ? 'Platform fee (deducted)'
+                  : 'Platform & Safety Fee',
+              amount: isWorker ? -platform : platform,
             ),
 
           const SizedBox(height: 10),
@@ -2248,10 +2500,17 @@ class _PaymentSummaryCard extends StatelessWidget {
           const SizedBox(height: 10),
 
           _ChargeRow(
-            label: 'Total Amount',
-            amount: booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice,
+            label: isWorker ? 'Your Payout' : 'Total Amount',
+            amount: isWorker ? workerTakeHome : customerTotal,
             emphasize: true,
           ),
+          if (isWorker && platform > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Customer paid ₹${customerTotal.toStringAsFixed(0)} · platform fee ₹${platform.toStringAsFixed(0)} deducted',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor, fontSize: 11),
+            ),
+          ],
 
           if (booking.paymentMethod != null && booking.paymentMethod!.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -2290,6 +2549,8 @@ class _ChargeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (amount == null && !emphasize) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final value = amount ?? 0;
+    final isDeduction = value < 0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2304,9 +2565,13 @@ class _ChargeRow extends StatelessWidget {
             ),
           ),
           Text(
-            '₹${(amount ?? 0).toStringAsFixed(0)}',
+            isDeduction
+                ? '-₹${value.abs().toStringAsFixed(0)}'
+                : '₹${value.toStringAsFixed(0)}',
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: emphasize ? AppColors.primary : null,
+              color: emphasize
+                  ? AppColors.primary
+                  : (isDeduction ? const Color(0xFFDC2626) : null),
               fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
               fontSize: emphasize ? 17 : 13,
             ),
@@ -2324,7 +2589,7 @@ class _StatusActions extends StatefulWidget {
   const _StatusActions({required this.booking, this.onRefresh});
 
   final Booking booking;
-  final VoidCallback? onRefresh;
+  final Future<void> Function()? onRefresh;
 
   @override
   State<_StatusActions> createState() => _StatusActionsState();
@@ -2332,7 +2597,10 @@ class _StatusActions extends StatefulWidget {
 
 class _StatusActionsState extends State<_StatusActions> {
   final RazorpayCheckoutService _razorpay = RazorpayCheckoutService();
+  final BookingsApiRepository _bookings = BookingsApiRepository();
   bool _isPaying = false;
+
+  Booking get _booking => widget.booking;
 
   @override
   void dispose() {
@@ -2341,9 +2609,31 @@ class _StatusActionsState extends State<_StatusActions> {
   }
 
   Future<void> _handlePayment() async {
-    final booking = widget.booking;
+    final booking = _booking;
     final currentUser = context.read<AppSessionCubit>().currentUser;
     final amount = booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice;
+    final raw = (booking.rawStatus ?? '').toUpperCase();
+    const inProgressMsg =
+        'The service is currently in progress. You cannot make a payment while the worker is actively working. Please wait until the worker completes the service.';
+
+    if (booking.status == BookingStatus.inProgress || raw == 'IN_PROGRESS') {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Payment unavailable'),
+          content: const Text(inProgressMsg),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
 
     if (amount <= 0) {
       ToastUtils.showToast(context: context, message: 'Invalid payment amount');
@@ -2367,19 +2657,38 @@ class _StatusActionsState extends State<_StatusActions> {
       if (verified) {
         ToastUtils.showToast(context: context, message: 'Payment successful!');
         widget.onRefresh?.call();
-        context.push(RouteNames.customerInvoice.replaceFirst(':id', booking.id));
+        context.goRefreshing(RouteNames.customerRatingPath(booking.id));
       } else {
         ToastUtils.showToast(context: context, message: 'Payment verification failed');
       }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _isPaying = false);
-      ToastUtils.showToast(context: context, message: e.message);
+      final msg = e.message;
+      if (msg.toLowerCase().contains('in progress') ||
+          msg.toLowerCase().contains('actively working')) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Payment unavailable'),
+            content: Text(msg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ToastUtils.showError(context: context, message: msg);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isPaying = false);
-      final msg = e.toString().replaceFirst('Exception: ', '');
-      ToastUtils.showToast(context: context, message: msg);
+      final msg = ApiException.fromError(e);
+      ToastUtils.showError(context: context, message: msg);
     }
   }
 
@@ -2390,25 +2699,27 @@ class _StatusActionsState extends State<_StatusActions> {
       builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Edit Problem Details'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Updating your problem description helps professionals understand the job requirements accurately.',
-              style: TextStyle(fontSize: 13, color: Colors.black54),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: descCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Problem Description',
-                border: OutlineInputBorder(),
-                hintText: 'Describe the issue...',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Updating your problem description helps professionals understand the job requirements accurately.',
+                style: TextStyle(fontSize: 13, color: Colors.black54),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: descCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Problem Description',
+                  border: OutlineInputBorder(),
+                  hintText: 'Describe the issue...',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -2448,7 +2759,7 @@ class _StatusActionsState extends State<_StatusActions> {
 
   @override
   Widget build(BuildContext context) {
-    final booking = widget.booking;
+    final booking = _booking;
     final role = context.watch<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
     final isWorker = role == UserRole.worker;
     final isPaid = booking.status == BookingStatus.paid ||
@@ -2457,6 +2768,54 @@ class _StatusActionsState extends State<_StatusActions> {
     final amount = booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice;
 
     switch (booking.status) {
+      case BookingStatus.cancelled:
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEE2E2),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFFECACA)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      booking.cancelledByWorker
+                          ? 'Order cancelled by worker'
+                          : 'Order cancelled',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: Color(0xFF991B1B),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      (booking.cancelReason ?? booking.declineReason)
+                                  ?.trim()
+                                  .isNotEmpty ==
+                              true
+                          ? 'Reason: ${booking.cancelReason ?? booking.declineReason}'
+                          : 'No further action needed on this booking.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFB91C1C),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+
       case BookingStatus.searching:
       case BookingStatus.draft:
         return Column(
@@ -2507,12 +2866,60 @@ class _StatusActionsState extends State<_StatusActions> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            PrimaryButton(
-              label: isWorker ? 'Open Navigation Map' : 'Track Worker Live',
-              onPressed: () => isWorker
-                  ? context.push('${RouteNames.workerNavigation}?bookingId=${booking.id}')
-                  : context.push('${RouteNames.customerTracking}?bookingId=${booking.id}'),
-            ),
+            if (isWorker)
+              PrimaryButton(
+                label: 'Open Navigation Map',
+                onPressed: () async {
+                  try {
+                    await _bookings.startNavigation(booking.id);
+                  } catch (_) {
+                    // Map still opens; GPS unlock is backup.
+                  }
+                  if (!context.mounted) return;
+                  context.push(
+                    '${RouteNames.workerNavigation}?bookingId=${booking.id}',
+                  );
+                },
+              )
+            else if (booking.workerHasStartedNavigation)
+              PrimaryButton(
+                label: 'Track Worker Live',
+                onPressed: () => context.push(
+                  '${RouteNames.customerTracking}?bookingId=${booking.id}',
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Color(0xFFD97706)),
+                      ),
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Waiting for worker to start navigation…',
+                        style: TextStyle(
+                          color: Color(0xFFB45309),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (!isWorker) ...[
               const SizedBox(height: 12),
               SecondaryButton(
@@ -2524,15 +2931,87 @@ class _StatusActionsState extends State<_StatusActions> {
         );
 
       case BookingStatus.arrived:
+        final raw = (booking.rawStatus ?? '').toUpperCase();
+        final hasEstimation =
+            raw == 'ESTIMATION_GIVEN' || raw == 'ESTIMATION_SUBMITTED';
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            PrimaryButton(
-              label: isWorker ? 'View Job Location on Map' : 'Track Worker Live',
-              onPressed: () => isWorker
-                  ? context.push('${RouteNames.workerNavigation}?bookingId=${booking.id}')
-                  : context.push('${RouteNames.customerTracking}?bookingId=${booking.id}'),
-            ),
+            if (!isWorker && hasEstimation) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF86EFAC)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.receipt_long_rounded, color: Color(0xFF059669)),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Worker sent a rough estimation for your review.',
+                        style: TextStyle(
+                          color: Color(0xFF065F46),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PrimaryButton(
+                label: 'Review Rough Estimation',
+                onPressed: () => context.push(
+                  '${RouteNames.customerEstimationReview}?bookingId=${booking.id}',
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (isWorker && !hasEstimation)
+              PrimaryButton(
+                label: 'Create Rough Estimation',
+                onPressed: () => context.push(
+                  '${RouteNames.workerPriceEstimation}?bookingId=${booking.id}',
+                ),
+              )
+            else if (isWorker && hasEstimation)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Text(
+                  'Waiting for customer to accept your rough estimation…',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFB45309),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              )
+            else if (!isWorker && booking.workerHasStartedNavigation)
+              SecondaryButton(
+                label: 'Track Worker Live',
+                onPressed: () => context.push(
+                  '${RouteNames.customerTracking}?bookingId=${booking.id}',
+                ),
+              ),
+            if (isWorker) ...[
+              const SizedBox(height: 12),
+              SecondaryButton(
+                label: 'View Job Location on Map',
+                onPressed: () => context.push(
+                  '${RouteNames.workerNavigation}?bookingId=${booking.id}',
+                ),
+              ),
+            ],
           ],
         );
 
@@ -2584,19 +3063,64 @@ class _StatusActionsState extends State<_StatusActions> {
       case BookingStatus.completed:
       case BookingStatus.rating:
       case BookingStatus.paid:
+        if (booking.needsReview(isWorker: isWorker)) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PrimaryButton(
+                label: isWorker ? 'Rate Customer' : 'Give Review',
+                onPressed: () {
+                  if (isWorker) {
+                    context.push(
+                      RouteNames.workerRatingPath(
+                        booking.id,
+                        customerId: booking.customerId,
+                      ),
+                    );
+                  } else {
+                    context.goRefreshing(RouteNames.customerRatingPath(booking.id));
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              SecondaryButton(
+                label: 'Continue without review',
+                onPressed: () {
+                  if (isWorker) {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go(RouteNames.workerJobs);
+                    }
+                    return;
+                  }
+                  context.push(
+                    RouteNames.customerInvoice.replaceFirst(':id', booking.id),
+                  );
+                },
+              ),
+            ],
+          );
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             PrimaryButton(
-              label: isPaid ? 'View Invoice & Receipt' : 'Pay Now (₹${amount.toInt()})',
+              label: isPaid
+                  ? 'View Invoice & Receipt'
+                  : 'Pay Now (₹${amount.toInt()})',
               loading: _isPaying,
               onPressed: _isPaying
                   ? null
-                  : () => isPaid
-                      ? context.push(
-                          RouteNames.customerInvoice.replaceFirst(':id', booking.id),
-                        )
-                      : _handlePayment(),
+                  : () {
+                      if (!isPaid) {
+                        _handlePayment();
+                        return;
+                      }
+                      context.push(
+                        RouteNames.customerInvoice.replaceFirst(':id', booking.id),
+                      );
+                    },
             ),
           ],
         );
@@ -2654,7 +3178,32 @@ class _StatusBadgeConfig {
   });
 }
 
-_StatusBadgeConfig _getStatusBadge(BookingStatus status, {required bool isWorker}) {
+_StatusBadgeConfig _getStatusBadge(
+  BookingStatus status, {
+  required bool isWorker,
+  String? rawStatus,
+  String? paymentStatus,
+}) {
+  final raw = (rawStatus ?? '').toUpperCase();
+  final pay = (paymentStatus ?? '').toUpperCase();
+  final isPaid =
+      status == BookingStatus.paid || pay == 'PAID' || raw == 'PAID' || raw == 'PAYMENT_PAID';
+  final isAwaitingPayment = !isPaid &&
+      (raw == 'PAYMENT_PENDING' ||
+          raw == 'AWAITING_PAYMENT' ||
+          (status == BookingStatus.completed &&
+              raw != 'COMPLETED' &&
+              pay != 'PAID'));
+
+  if (isAwaitingPayment) {
+    return const _StatusBadgeConfig(
+      label: 'Awaiting Payment',
+      color: Color(0xFFD97706),
+      bgColor: Color(0xFFFEF3C7),
+      icon: Icons.payments_outlined,
+    );
+  }
+
   switch (status) {
     case BookingStatus.searching:
     case BookingStatus.draft:
@@ -2686,7 +3235,7 @@ _StatusBadgeConfig _getStatusBadge(BookingStatus status, {required bool isWorker
         icon: Icons.construction_rounded,
       );
     case BookingStatus.completed:
-      case BookingStatus.rating:
+    case BookingStatus.rating:
       return const _StatusBadgeConfig(
         label: 'Completed',
         color: Color(0xFF059669),
@@ -2699,6 +3248,13 @@ _StatusBadgeConfig _getStatusBadge(BookingStatus status, {required bool isWorker
         color: Color(0xFF059669),
         bgColor: Color(0xFFECFDF5),
         icon: Icons.verified_rounded,
+      );
+    case BookingStatus.cancelled:
+      return _StatusBadgeConfig(
+        label: isWorker ? 'Declined' : 'Cancelled',
+        color: const Color(0xFFDC2626),
+        bgColor: const Color(0xFFFEE2E2),
+        icon: Icons.cancel_rounded,
       );
   }
 }

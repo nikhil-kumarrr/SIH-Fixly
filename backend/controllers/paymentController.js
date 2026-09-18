@@ -9,6 +9,7 @@ import WelfareTransaction from '../models/WelfareTransaction.js';
 import { getPlatformSettings } from '../services/settingsService.js';
 import { notifyUser, safeNotify } from '../services/notificationService.js';
 import { getTargetBookingRooms } from '../sockets/tracking.js';
+import { markCouponUsed } from '../services/couponService.js';
 
 let razorpay = null;
 if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
@@ -86,7 +87,19 @@ const creditWorkerWallet = async ({
         ? Number(settings.cooperativeWelfarePercent)
         : 0;
 
-    const totalAmt = Number(transaction.amount || booking.invoice?.totalAmount || 0);
+    // Coupon is Fixly → customer subsidy. Worker gross = pre-coupon invoice.
+    const inv = booking.invoice || {};
+    const couponDiscount = Number(inv.couponDiscount) || 0;
+    const preCouponFromLines =
+        (Number(inv.baseServiceFee) || 0) +
+        (Number(inv.extraPartsTotal) || 0) +
+        (Number(inv.platformFee) || 0) +
+        (Number(inv.urgentFee) || 0);
+    const customerPaid = Number(transaction.amount || inv.totalAmount || 0);
+    const totalAmt =
+        preCouponFromLines > 0
+            ? preCouponFromLines
+            : Math.max(0, customerPaid + couponDiscount);
     const platformCommissionDeducted = Math.round(totalAmt * (commPercent / 100));
     const welfareAmount = Math.round(totalAmt * (welfarePercent / 100));
     const totalDeductions = platformCommissionDeducted + welfareAmount;
@@ -101,6 +114,10 @@ const creditWorkerWallet = async ({
     worker.workerProfile.totalJobs = Number(
         (worker.workerProfile.totalJobs || 0) + 1
     );
+    const couponNote =
+        couponDiscount > 0
+            ? `, Coupon subsidy (Fixly): ₹${couponDiscount} (customer paid ₹${customerPaid})`
+            : '';
     worker.workerProfile.walletTransactions.push({
         transactionId: paymentId,
         bookingId: booking._id,
@@ -109,7 +126,7 @@ const creditWorkerWallet = async ({
         platformFeeDeducted: platformCommissionDeducted,
         welfareDeducted: welfareAmount,
         type: 'CREDIT',
-        description: `Job earnings credited. Total: ₹${totalAmt}, Platform fee cut: -₹${platformCommissionDeducted} (${commPercent}%), Welfare contribution cut: -₹${welfareAmount} (${welfarePercent}%), Net Payout: ₹${workerPayout}`,
+        description: `Job earnings credited. Gross: ₹${totalAmt}, Platform fee cut: -₹${platformCommissionDeducted} (${commPercent}%), Welfare contribution cut: -₹${welfareAmount} (${welfarePercent}%), Net Payout: ₹${workerPayout}${couponNote}`,
         createdAt: new Date(),
     });
     await worker.save();
@@ -180,15 +197,27 @@ export const createOrder = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Not your booking' });
         }
         if (booking.invoice?.paymentStatus === 'PAID') {
-            return res.status(400).json({ success: false, message: 'Booking already paid' });
+            return res.status(400).json({ success: false, message: 'This booking has already been paid.' });
         }
-        if (!booking.completionOtpVerified) {
-            return res.status(400).json({ success: false, message: 'Completion OTP must be verified before payment can be initiated' });
-        }
-        if (!['IN_PROGRESS', 'PAYMENT_PENDING', 'COMPLETED'].includes(booking.status)) {
+
+        if (booking.status === 'CANCELLED') {
             return res.status(400).json({
                 success: false,
-                message: 'Payment is available after the job is in progress',
+                message: 'This booking has been cancelled. Payment cannot be initiated.',
+            });
+        }
+
+        if (booking.status === 'IN_PROGRESS') {
+            return res.status(400).json({
+                success: false,
+                message: 'The service is currently in progress. You cannot make a payment while the worker is actively working. Please wait until the worker completes the service.',
+            });
+        }
+
+        if (!['PAYMENT_PENDING', 'COMPLETED'].includes(booking.status)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment can only be initiated after the worker has completed the service. The service is not yet marked as completed.',
             });
         }
 
@@ -335,11 +364,15 @@ export const verifyPayment = async (req, res) => {
             booking.status = 'COMPLETED';
             booking.jobCompletedAt = booking.jobCompletedAt || new Date();
 
-            const calculatedTotal =
+            const couponDiscount = Number(booking.invoice.couponDiscount) || 0;
+            const calculatedTotal = Math.max(
+                0,
                 (Number(booking.invoice.baseServiceFee) || 0) +
-                (Number(booking.invoice.extraPartsTotal) || 0) +
-                (Number(booking.invoice.platformFee) || 0) +
-                (Number(booking.invoice.urgentFee) || 0);
+                    (Number(booking.invoice.extraPartsTotal) || 0) +
+                    (Number(booking.invoice.platformFee) || 0) +
+                    (Number(booking.invoice.urgentFee) || 0) -
+                    couponDiscount,
+            );
 
             if (calculatedTotal > 0) {
                 booking.invoice.totalAmount = calculatedTotal;
@@ -348,6 +381,14 @@ export const verifyPayment = async (req, res) => {
             }
 
             await booking.save();
+
+            // Redeem coupon only after payment succeeds.
+            if (booking.invoice.couponCode) {
+                await markCouponUsed(
+                    booking.invoice.couponCode,
+                    booking.customer || transaction.customerId || req.user?.id,
+                );
+            }
 
             await creditWorkerWallet({
                 workerId: booking.worker || transaction.workerId,

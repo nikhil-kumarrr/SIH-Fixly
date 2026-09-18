@@ -51,7 +51,8 @@ import {
     createWelfareResource,
     updateWelfareResource,
     deleteWelfareResource,
-    getWelfareResourcesAdmin
+    getWelfareResourcesAdmin,
+    syncServicesCacheAdmin
 } from '../controllers/adminController.js';
 import {
     adminGetWorkerVerification,
@@ -99,6 +100,7 @@ import {
     adminUpdateBanner,
     adminDeleteBanner
 } from '../controllers/bannerController.js';
+import { getDemandForecast } from '../controllers/demandForecastController.js';
 
 const router = express.Router();
 
@@ -197,6 +199,8 @@ router.get('/services', getServices);
 router.post('/services', uploadCategoryMedia, createService);
 router.put('/services/:id', updateService);
 router.delete('/services/:id', deleteService);
+router.post('/services/sync-cache', syncServicesCacheAdmin);
+router.post('/cache/sync', syncServicesCacheAdmin);
 router.post('/upload', upload.single('file'), uploadAdminFile);
 
 // Payments & Financials
@@ -216,6 +220,7 @@ router.delete('/notifications/:id', deleteNotification);
 // Analytics & AI Insights
 router.get('/analytics', getAnalytics);
 router.get('/ai-insights', getAIInsights);
+router.get('/ai/demand-forecast', getDemandForecast);
 router.get('/reports', getReportsData);
 
 // Platform Governance Settings

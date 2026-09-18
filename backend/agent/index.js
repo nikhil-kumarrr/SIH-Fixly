@@ -1,5 +1,16 @@
 import { graph } from "./graph/graph.js";
 import { getMemory, addMemoryMessage, getSessionState, saveSessionState, clearSession } from "./config/memory.js";
+import { localizeAgentOutput } from "./services/localizeService.js";
+
+/** Client null/empty must not wipe Redis-filled slots (bookingType, workerId, …). */
+const mergeConversationState = (cached = {}, client = {}) => {
+    const out = { ...(cached || {}) };
+    for (const [key, value] of Object.entries(client || {})) {
+        if (value === null || value === undefined || value === "") continue;
+        out[key] = value;
+    }
+    return out;
+};
 
 /**
  * Main AI Agent Message Processing Pipeline
@@ -24,14 +35,26 @@ export const processFixlyAgentMessage = async ({
         userId,
         coordinates,
         addressLine,
-        ...(cachedState || {}),
-        ...(conversationState || {}),
+        ...mergeConversationState(cachedState || {}, conversationState || {}),
         prompt: text,
         language: explicitLanguage || conversationState.language || cachedState?.language || "en"
     };
 
     // 2. Invoke LangGraph Workflow
     const result = await graph.invoke(activeState);
+
+    // 2b. Localize reply + chips into the user's app language (en/hi are native).
+    try {
+        const localized = await localizeAgentOutput({
+            reply: result.aiResponse,
+            suggestedReplies: result.suggestedReplies || [],
+            lang,
+        });
+        result.aiResponse = localized.reply;
+        result.suggestedReplies = localized.suggestedReplies;
+    } catch (localizeErr) {
+        console.warn("[Agent] localize skipped:", localizeErr.message);
+    }
 
     // 3. Handle Redis Session Persistence
     if (result.action === "BOOKING_CREATED" || result.action === "SESSION_ABORTED") {

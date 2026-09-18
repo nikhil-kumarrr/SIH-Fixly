@@ -620,10 +620,14 @@ class AppRefreshIndicator extends StatelessWidget {
     required this.onRefresh,
     required this.child,
     super.key,
+    this.notificationPredicate,
   });
 
   final Future<void> Function() onRefresh;
   final Widget child;
+
+  /// Defaults to Flutter's depth-0 check. Use custom for [NestedScrollView].
+  final ScrollNotificationPredicate? notificationPredicate;
 
   @override
   Widget build(BuildContext context) {
@@ -635,6 +639,8 @@ class AppRefreshIndicator extends StatelessWidget {
       strokeWidth: 2.5,
       displacement: 48,
       edgeOffset: 12,
+      notificationPredicate:
+          notificationPredicate ?? defaultScrollNotificationPredicate,
       child: child,
     );
   }

@@ -12,10 +12,12 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/map_constants.dart';
 import '../../../../core/location/app_location.dart';
 import '../../../../core/location/location_service.dart';
+import '../../../../core/constants/india_locations.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../core/widgets/fixly_map_view.dart';
+import '../../../../core/widgets/location_typeahead_field.dart';
 import '../cubit/profile_cubit.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -40,6 +42,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late final TextEditingController _experienceController;
   late final TextEditingController _bioController;
   late final TextEditingController _upiController;
+  late final TextEditingController _stateController;
   late final TextEditingController _cityController;
   late final TextEditingController _pincodeController;
 
@@ -76,6 +79,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
     _bioController = TextEditingController(text: state.bio);
     _upiController = TextEditingController(text: state.upiId);
+    _stateController = TextEditingController(text: state.homeState);
     _cityController = TextEditingController(text: state.homeCity);
     _pincodeController = TextEditingController(text: state.homePincode);
     _selectedCategory = state.category.isNotEmpty ? state.category : null;
@@ -110,6 +114,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         state.experienceYears > 0 ? state.experienceYears.toString() : '';
     _bioController.text = state.bio;
     _upiController.text = state.upiId;
+    _stateController.text = state.homeState;
     _cityController.text = state.homeCity;
     _pincodeController.text = state.homePincode;
     if (_selectedCategory == null && state.category.isNotEmpty) {
@@ -136,6 +141,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _experienceController.dispose();
     _bioController.dispose();
     _upiController.dispose();
+    _stateController.dispose();
     _cityController.dispose();
     _pincodeController.dispose();
     super.dispose();
@@ -269,6 +275,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             bio: _bioController.text.trim(),
             upiId: _upiController.text.trim(),
             gender: _gender,
+            homeState: _stateController.text.trim(),
             homeCity: _cityController.text.trim(),
             homePincode: _pincodeController.text.trim(),
           );
@@ -511,32 +518,63 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     ],
 
                     const SizedBox(height: 16),
-                    // City & Pincode 2-Column Row
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: AppTextField(
-                            controller: _cityController,
-                            label: 'City',
-                            hint: 'e.g. Noida',
-                            prefixIcon:
-                                const Icon(Icons.location_city_outlined),
+                    if (isWorker) ...[
+                      LocationTypeAheadField(
+                        controller: _stateController,
+                        label: 'State',
+                        hint: 'Type to search state',
+                        suggestionsFor: (query) async =>
+                            IndiaLocations.filterStates(query),
+                        onSelected: (stateName) {
+                          final districts =
+                              IndiaLocations.districtsFor(stateName);
+                          final current = _cityController.text.trim();
+                          final stillValid = districts.any(
+                            (d) => d.toLowerCase() == current.toLowerCase(),
+                          );
+                          if (!stillValid) {
+                            _cityController.clear();
+                          }
+                          setState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      LocationTypeAheadField(
+                        controller: _cityController,
+                        label: 'District',
+                        hint: 'Type to search district',
+                        suggestionsFor: (query) async {
+                          final state = _stateController.text.trim();
+                          if (state.isEmpty) return const <String>[];
+                          return IndiaLocations.filterDistricts(state, query);
+                        },
+                      ),
+                    ] else
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: AppTextField(
+                              controller: _cityController,
+                              label: 'City',
+                              hint: 'e.g. Noida',
+                              prefixIcon:
+                                  const Icon(Icons.location_city_outlined),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: AppTextField(
-                            controller: _pincodeController,
-                            label: 'Pincode',
-                            hint: '201301',
-                            keyboardType: TextInputType.number,
-                            prefixIcon: const Icon(Icons.pin_outlined),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: AppTextField(
+                              controller: _pincodeController,
+                              label: 'Pincode',
+                              hint: '201301',
+                              keyboardType: TextInputType.number,
+                              prefixIcon: const Icon(Icons.pin_outlined),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.xl),

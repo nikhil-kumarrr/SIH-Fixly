@@ -49,6 +49,13 @@ export default function DashboardPage() {
   const [isAddServiceOpen, setIsAddServiceOpen] = useState(false);
   const [isSendNotifOpen, setIsSendNotifOpen] = useState(false);
   const [emergencyBooking, setEmergencyBooking] = useState(null);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 900);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const totalBookingsVal = dashboardStats?.totalBookings !== undefined ? dashboardStats.totalBookings.toLocaleString() : (bookings?.length || 0).toLocaleString();
   const totalRevenueVal = dashboardStats?.totalRevenue !== undefined ? `₹${dashboardStats.totalRevenue.toLocaleString('en-IN')}` : '₹0';
@@ -304,12 +311,15 @@ export default function DashboardPage() {
             backgroundColor: 'var(--bg-card)',
             borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--border-light)',
-            padding: '22px 24px',
+            padding: isMobile ? '16px 14px' : '22px 24px',
             boxShadow: 'var(--shadow-card)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
             minHeight: '230px',
+            minWidth: 0,
+            maxWidth: '100%',
+            overflow: 'hidden',
           }}
         >
           <div
@@ -317,7 +327,7 @@ export default function DashboardPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: '16px',
+              marginBottom: '14px',
             }}
           >
             <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#12251a' }}>
@@ -339,15 +349,24 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <div
+            className="table-responsive"
+            style={{
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              width: '100%',
+              maxWidth: '100%',
+              display: 'block',
+            }}
+          >
+            <table style={{ minWidth: '580px', width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #f0f4f1', color: '#718278', fontSize: '12px', fontWeight: '600' }}>
-                  <th style={{ padding: '8px 12px 10px 4px' }}>Booking ID</th>
-                  <th style={{ padding: '8px 12px 10px 12px' }}>Customer</th>
-                  <th style={{ padding: '8px 12px 10px 12px' }}>Service</th>
-                  <th style={{ padding: '8px 12px 10px 12px' }}>Worker</th>
-                  <th style={{ padding: '8px 4px 10px 12px', textAlign: 'right' }}>Status</th>
+                <tr style={{ borderBottom: '1px solid #f0f4f1', color: '#718278', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                  <th style={{ padding: '8px 12px 10px 4px', whiteSpace: 'nowrap' }}>Booking ID</th>
+                  <th style={{ padding: '8px 12px 10px 12px', whiteSpace: 'nowrap' }}>Customer</th>
+                  <th style={{ padding: '8px 12px 10px 12px', whiteSpace: 'nowrap' }}>Service</th>
+                  <th style={{ padding: '8px 12px 10px 12px', whiteSpace: 'nowrap' }}>Worker</th>
+                  <th style={{ padding: '8px 4px 10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -362,25 +381,25 @@ export default function DashboardPage() {
                     <tr
                       key={b.id}
                       onClick={() => navigate(`/bookings`)}
-                      style={{ borderBottom: '1px solid #f5f8f6', fontSize: '13px', cursor: 'pointer' }}
+                      style={{ borderBottom: '1px solid #f5f8f6', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                       onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f9fbf9')}
                       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                     >
-                      <td style={{ padding: '12px 12px 12px 4px' }}>
+                      <td style={{ padding: '12px 12px 12px 4px', whiteSpace: 'nowrap' }}>
                         <span style={{ color: 'var(--text-link)', fontWeight: '600' }}>
                           {b.id}
                         </span>
                       </td>
-                      <td style={{ padding: '12px', fontWeight: '500', color: '#203227' }}>
+                      <td style={{ padding: '12px', fontWeight: '500', color: '#203227', whiteSpace: 'nowrap' }}>
                         {b.customer}
                       </td>
-                      <td style={{ padding: '12px', color: '#556b5e', fontWeight: '500' }}>
+                      <td style={{ padding: '12px', color: '#556b5e', fontWeight: '500', whiteSpace: 'nowrap' }}>
                         {b.service}
                       </td>
-                      <td style={{ padding: '12px', color: '#203227', fontWeight: '500' }}>
+                      <td style={{ padding: '12px', color: '#203227', fontWeight: '500', whiteSpace: 'nowrap' }}>
                         {b.worker}
                       </td>
-                      <td style={{ padding: '12px 4px 12px 12px', textAlign: 'right' }}>
+                      <td style={{ padding: '12px 4px 12px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <Badge status={b.status} />
                       </td>
                     </tr>
@@ -397,82 +416,161 @@ export default function DashboardPage() {
             backgroundColor: 'var(--bg-card)',
             borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--border-light)',
-            padding: '20px 24px',
+            padding: isMobile ? '16px' : '20px 24px',
             boxShadow: 'var(--shadow-card)',
             position: 'relative',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            minHeight: '230px',
+            minHeight: isMobile ? 'auto' : '230px',
+            gap: isMobile ? '14px' : '0',
+            minWidth: 0,
+            maxWidth: '100%',
           }}
         >
-          <div style={{ position: 'relative', zIndex: 2, maxWidth: '200px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#12251a', lineHeight: '1.3' }}>
-              Workers on Duty Live on Map
-            </h2>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: '6px',
-                fontSize: '11px',
-                color: '#15803d',
-                fontWeight: '600',
-                backgroundColor: '#eaf8ef',
-                padding: '2px 8px',
-                borderRadius: '999px',
-              }}
-            >
-              <span
+          {isMobile ? (
+            /* Mobile Stacked Map Layout */
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <h2 style={{ fontSize: '15px', fontWeight: '700', color: '#12251a', lineHeight: '1.2' }}>
+                    Workers on Duty Live on Map
+                  </h2>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      marginTop: '4px',
+                      fontSize: '11px',
+                      color: '#15803d',
+                      fontWeight: '600',
+                      backgroundColor: '#eaf8ef',
+                      padding: '2px 8px',
+                      borderRadius: '999px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: '#15803d',
+                      }}
+                    />
+                    <span>
+                      {workers.filter((w) => Array.isArray(w.coordinates) && w.coordinates.length === 2).length}{' '}
+                      with live GPS
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => navigate('/workers?map=1')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: 'var(--primary-brand)',
+                    color: '#ffffff',
+                    padding: '6px 14px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    boxShadow: 'var(--shadow-pill)',
+                  }}
+                >
+                  <span>View Map</span>
+                  <Navigation size={12} strokeWidth={2.4} />
+                </button>
+              </div>
+
+              {/* Full Width Map Preview on Mobile */}
+              <div
                 style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#15803d',
+                  width: '100%',
+                  height: '180px',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  border: '1px solid var(--border-light)',
                 }}
-              />
-              <span>
-                {workers.filter((w) => Array.isArray(w.coordinates) && w.coordinates.length === 2).length}{' '}
-                with live GPS
-              </span>
-            </div>
-          </div>
+              >
+                <WorkersLeafletMap workers={workers} sosAlerts={sosAlerts} height="100%" />
+              </div>
+            </>
+          ) : (
+            /* Desktop Side-by-Side Map Layout */
+            <>
+              <div style={{ position: 'relative', zIndex: 2, maxWidth: '200px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#12251a', lineHeight: '1.3' }}>
+                  Workers on Duty Live on Map
+                </h2>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '6px',
+                    fontSize: '11px',
+                    color: '#15803d',
+                    fontWeight: '600',
+                    backgroundColor: '#eaf8ef',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: '#15803d',
+                    }}
+                  />
+                  <span>
+                    {workers.filter((w) => Array.isArray(w.coordinates) && w.coordinates.length === 2).length}{' '}
+                    with live GPS
+                  </span>
+                </div>
+              </div>
 
-          <div
-            style={{
-              position: 'absolute',
-              right: '0',
-              bottom: '0',
-              top: '0',
-              width: '60%',
-              zIndex: 1,
-            }}
-          >
-            <WorkersLeafletMap workers={workers} sosAlerts={sosAlerts} height="100%" />
-          </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  right: '0',
+                  bottom: '0',
+                  top: '0',
+                  width: '60%',
+                  zIndex: 1,
+                }}
+              >
+                <WorkersLeafletMap workers={workers} sosAlerts={sosAlerts} height="100%" />
+              </div>
 
-          <div style={{ position: 'relative', zIndex: 2, marginTop: '20px' }}>
-            <button
-              onClick={() => navigate('/workers?map=1')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                backgroundColor: 'var(--primary-brand)',
-                color: '#ffffff',
-                padding: '9px 18px',
-                borderRadius: 'var(--radius-pill)',
-                fontSize: '13px',
-                fontWeight: '600',
-                boxShadow: 'var(--shadow-pill)',
-              }}
-            >
-              <span>View Map</span>
-              <Navigation size={13} strokeWidth={2.4} />
-            </button>
-          </div>
+              <div style={{ position: 'relative', zIndex: 2, marginTop: '20px' }}>
+                <button
+                  onClick={() => navigate('/workers?map=1')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: 'var(--primary-brand)',
+                    color: '#ffffff',
+                    padding: '9px 18px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    boxShadow: 'var(--shadow-pill)',
+                  }}
+                >
+                  <span>View Map</span>
+                  <Navigation size={13} strokeWidth={2.4} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
