@@ -82,6 +82,11 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
+		</dict>
 		<!-- GOOGLE_SIGN_IN_URL_SCHEME -->
 		<key>CFBundleURLTypes</key>
 		<array>

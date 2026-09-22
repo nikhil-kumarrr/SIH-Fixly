@@ -132,8 +132,8 @@ export const applyCouponToBooking = async (req, res) => {
 
             const populated = await Booking.findById(booking._id)
                 .populate('service', 'name category icon basePrice')
-                .populate('customer', 'name phone')
-                .populate('worker', 'name phone workerProfile')
+                .populate('customer', 'name avatar')
+                .populate('worker', 'name avatar workerProfile')
                 .lean();
 
             return res.status(200).json({
@@ -185,8 +185,8 @@ export const applyCouponToBooking = async (req, res) => {
         // Coupon stays reserved on invoice only — burn after successful payment.
         const populated = await Booking.findById(booking._id)
             .populate('service', 'name category icon basePrice')
-            .populate('customer', 'name phone')
-            .populate('worker', 'name phone workerProfile')
+            .populate('customer', 'name avatar')
+            .populate('worker', 'name avatar workerProfile')
             .lean();
 
         return res.status(200).json({
@@ -241,8 +241,8 @@ export const removeCouponFromBooking = async (req, res) => {
 
         const populated = await Booking.findById(booking._id)
             .populate('service', 'name category icon basePrice')
-            .populate('customer', 'name phone')
-            .populate('worker', 'name phone workerProfile')
+            .populate('customer', 'name avatar')
+            .populate('worker', 'name avatar workerProfile')
             .lean();
 
         return res.status(200).json({
@@ -533,8 +533,8 @@ export const createBooking = async (req, res) => {
         // Populate service & worker details for response
         const populatedBooking = await Booking.findById(booking._id)
             .populate('service', 'name category icon basePrice')
-            .populate('worker', 'name phone avatar workerProfile rating')
-            .populate('customer', 'name phone')
+            .populate('worker', 'name avatar workerProfile rating')
+            .populate('customer', 'name avatar')
             .lean();
 
         const io = req.app.get('io');
@@ -615,8 +615,8 @@ export const getBookingDetails = async (req, res) => {
 
         const booking = await Booking.findById(bookingId)
             .populate('service')
-            .populate('worker', 'name phone avatar workerProfile')
-            .populate('customer', 'name phone avatar')
+            .populate('worker', 'name avatar workerProfile')
+            .populate('customer', 'name avatar')
             .lean();
 
         if (!booking) {
@@ -698,8 +698,8 @@ export const updateBooking = async (req, res) => {
 
         const populatedBooking = await Booking.findById(booking._id)
             .populate('service', 'name title category icon basePrice')
-            .populate('worker', 'name phone avatar workerProfile rating')
-            .populate('customer', 'name phone')
+            .populate('worker', 'name avatar workerProfile rating')
+            .populate('customer', 'name avatar')
             .lean();
         const service = populatedBooking?.service;
         const category = service?.category;
@@ -760,7 +760,7 @@ export const cancelBooking = async (req, res) => {
         const { bookingId } = req.params;
         const { reason } = req.body;
 
-        const booking = await Booking.findById(bookingId).populate('worker');
+        const booking = await Booking.findById(bookingId).populate('worker', 'name avatar workerProfile location savedAddresses');
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
         if (['COMPLETED', 'CANCELLED'].includes(booking.status)) {
@@ -899,8 +899,8 @@ export const getBookingHistory = async (req, res) => {
 
         const bookings = await Booking.find(query)
             .populate('service')
-            .populate('worker', 'name phone avatar workerProfile')
-            .populate('customer', 'name phone avatar')
+            .populate('worker', 'name avatar workerProfile')
+            .populate('customer', 'name avatar')
             .sort({ createdAt: -1 })
             .lean();
 
@@ -923,8 +923,8 @@ export const getBookingInvoice = async (req, res) => {
 
         const booking = await Booking.findById(bookingId)
             .populate('service')
-            .populate('customer', 'name email phone')
-            .populate('worker', 'name phone avatar workerProfile')
+            .populate('customer', 'name email avatar')
+            .populate('worker', 'name avatar workerProfile')
             .lean();
 
         if (!booking) {
@@ -980,7 +980,7 @@ export const getLiveTracking = async (req, res) => {
         }
 
         // 2. Fallback if worker has not started moving yet
-        const booking = await Booking.findById(bookingId).populate('worker');
+        const booking = await Booking.findById(bookingId).populate('worker', 'location savedAddresses');
         if (!booking) {
             return res.status(404).json({ success: false, message: 'Booking not found' });
         }
@@ -1058,8 +1058,8 @@ export const triggerSosAlert = async (req, res) => {
 
 const populateBooking = (q) => q
     .populate('service')
-    .populate('worker', 'name phone avatar workerProfile')
-    .populate('customer', 'name phone avatar');
+    .populate('worker', 'name avatar workerProfile')
+    .populate('customer', 'name avatar');
 
 const paginate = (req) => {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -1414,7 +1414,7 @@ export const createEmergencyBooking = async (req, res) => {
 
         const populatedBooking = await Booking.findById(booking._id)
             .populate('service', 'name category icon basePrice')
-            .populate('customer', 'name phone')
+            .populate('customer', 'name avatar')
             .lean();
 
         const io = req.app.get('io');

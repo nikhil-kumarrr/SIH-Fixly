@@ -424,23 +424,15 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage>
                                   fontSize: 15,
                                 ),
                               ),
-                              if (customerPhone != null && customerPhone.isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  customerPhone,
-                                  style: TextStyle(fontSize: 12, color: mutedText),
+                              const SizedBox(height: 2),
+                              const Text(
+                                'In-App Calling Protected',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF059669),
                                 ),
-                              ] else ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Phone not available',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontStyle: FontStyle.italic,
-                                    color: mutedText,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ],
                           ),
                         ),

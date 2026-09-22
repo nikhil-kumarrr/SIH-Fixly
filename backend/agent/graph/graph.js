@@ -189,7 +189,7 @@ export const fixlyAgentHandler = async (state) => {
         try {
             const userBookings = await Booking.find({ customer: state.userId })
                 .populate('service', 'title category')
-                .populate('worker', 'name phone')
+                .populate('worker', 'name avatar')
                 .sort({ createdAt: -1 })
                 .limit(3)
                 .lean();

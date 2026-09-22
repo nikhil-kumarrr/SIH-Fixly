@@ -787,9 +787,11 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        booking.customerPhone ?? 'Phone on file',
+                        'In-App Calling Protected',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.hintColor,
+                          color: const Color(0xFF059669),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
                         ),
                       ),
                     ],

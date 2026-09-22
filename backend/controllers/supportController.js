@@ -42,7 +42,7 @@ export const getActiveOrCreateTicket = async (req, res) => {
         if (!ticket) {
             // Generate welcome message tailored to role
             const welcomeText = userRole === 'worker'
-                ? `Namaste ${req.user.name || 'Partner'}! I'm Fixly AI Assistant. I'm here 24/7 to help you with job payouts, KYC verification, safety, or order disputes. How can I assist you today?`
+                ? `Hello ${req.user.name || 'Partner'}! I'm Fixly AI Assistant. I'm here 24/7 to help you with job payouts, KYC verification, safety, or order disputes. How can I assist you today?`
                 : `Hello ${req.user.name || 'there'}! I'm Fixly AI Assistant. How can I help you with your booking, technician tracking, invoice, or refund today?`;
 
             const quickReplies = getDefaultQuickReplies(userRole);
@@ -93,7 +93,7 @@ export const resetUserTicket = async (req, res) => {
 
         // Create a fresh new ticket
         const welcomeText = userRole === 'worker'
-            ? `Namaste ${req.user.name || 'Partner'}! I'm Fixly AI Assistant. I'm here 24/7 to help you with job payouts, KYC verification, safety, or order disputes. How can I assist you today?`
+            ? `Hello ${req.user.name || 'Partner'}! I'm Fixly AI Assistant. I'm here 24/7 to help you with job payouts, KYC verification, safety, or order disputes. How can I assist you today?`
             : `Hello ${req.user.name || 'there'}! I'm Fixly AI Assistant. How can I help you with your booking, technician tracking, invoice, or refund today?`;
 
         const quickReplies = getDefaultQuickReplies(userRole);

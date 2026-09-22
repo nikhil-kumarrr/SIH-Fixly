@@ -92,9 +92,9 @@ export const createBookingInDB = async ({
 
     // 4. Populate Booking Details
     const populated = await Booking.findById(newBooking._id)
-        .populate('worker', 'name phone avatar workerProfile rating')
+        .populate('worker', 'name avatar workerProfile rating')
         .populate('service', 'name title category icon basePrice')
-        .populate('customer', 'name phone')
+        .populate('customer', 'name avatar')
         .lean();
 
     const resultBooking = populated || newBooking.toObject();

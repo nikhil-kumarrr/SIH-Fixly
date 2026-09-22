@@ -89,7 +89,7 @@ export const acceptBooking = async (req, res) => {
         const io = req.app.get('io');
         if (io) {
             const targetRooms = getTargetBookingRooms(bookingId);
-            const workerUser = await User.findById(workerId).select('name phone avatar workerProfile rating').lean();
+            const workerUser = await User.findById(workerId).select('name avatar workerProfile rating').lean();
 
             // A. Notify specific booking room (customer & accepted worker)
             io.to(targetRooms).emit('booking_status_update', {
