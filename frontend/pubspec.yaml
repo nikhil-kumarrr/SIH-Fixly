@@ -111,7 +111,8 @@ flutter:
     - assets/icons/start.png
     - assets/icons/stop.png
     - assets/icons/bike_marker.png
-    - assets/ai/siri_orb.gif
+    # siri_orb.gif unused while FixlyLiveOrb is live — omit from bundle (~1.7MB).
+    # - assets/ai/siri_orb.gif
     - assets/ai/fixly_live_orb.gif
     - assets/sounds/ringtone.wav
     - assets/sounds/calling.wav

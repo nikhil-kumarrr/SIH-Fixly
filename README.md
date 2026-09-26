@@ -5,6 +5,62 @@
 
 Fixly connects **customers** with **verified cooperative workers** for on-demand household services (plumbing, electrical, cleaning, and more). Unlike typical gig aggregators, Fixly is built around **cooperative federations**, fair wage floors, worker welfare, and an AI concierge (**Flexi**) that can book jobs via chat or live voice.
 
+This file is the map of the whole repo. Each big folder has its own `README.md` that stays on that folder only. Deeper architecture drawings live in [`APP_FLOW.md`](APP_FLOW.md).
+
+---
+
+## Picture first — one job, four apps
+
+A person needs a plumber. Four programs do the work. They do not talk to each other directly except through the Node API (and one special voice line).
+
+```mermaid
+flowchart LR
+    Phone["Phone app\nFlutter\ncustomer + worker"]
+    Desk["Admin desk\nReact"]
+    API["Brain\nNode API :8000"]
+    Brain2["Helpers\nPython ML"]
+    Box[("MongoDB\n+ Redis")]
+
+    Phone -->|"login, book, pay"| API
+    Desk -->|"approve, watch map"| API
+    API --> Box
+    API -->|"what service? face match?"| Brain2
+    Phone -.->|"live voice only\nafter API gives a short token"| Gemini["Google Gemini Live"]
+```
+
+**Plain words**
+
+1. Customer opens the Flutter app, signs in, describes the problem (or talks to Flexi).
+2. The Node API saves the booking in MongoDB and finds a nearby verified worker.
+3. The worker app gets a live ping (Socket.IO). Worker goes, arrives, shows an OTP, gives a price, does the job.
+4. Customer pays with Razorpay. Worker wallet updates. Federation admin can see the job on the React desk.
+5. Heavy AI (guess the service, match a face) runs in Python. The phone never calls Python itself. Node calls Python.
+
+**Technical words (same picture)**
+
+| Hop | What actually moves |
+|-----|---------------------|
+| App → API | HTTPS + JSON. Header carries a JWT. Device id is checked against Redis so one account stays on one device. |
+| Live map / calls | Socket.IO on the same port `8000`. Redis adapter lets more than one API process share rooms. |
+| Voice | `POST /api/ai/agent/live-token` mints a short Gemini token. Audio then goes phone ↔ Google, not through Node. |
+| Money | Razorpay order + signature check in `paymentController`. Wallet rows are Mongo `Transaction` / `PayoutRequest`. |
+| Who may see what | `federationMiddleware` limits a federation admin to their cooperative. Super admin sees all. |
+
+---
+
+## The four folders
+
+Only these four folders have their own README. Inner folders are explained inside that README. They do not have a separate file.
+
+| Folder | Who it is | README |
+|--------|-----------|--------|
+| [`frontend/`](frontend/README.md) | Phone app. One install, customer or worker. | Screens, Cubit, how it calls the API |
+| [`backend/`](backend/README.md) | Node API on port 8000. The brain. | Routes, Mongo, sockets, Flexi, queues |
+| [`FIXLY ADMIN PANEL/`](FIXLY%20ADMIN%20PANEL/README.md) | React desk for super admin and federation admin | Pages, login, `/api/admin` |
+| [`ai_ml/`](ai_ml/README.md) | Python helpers | Ports 8002, 8004, 8080, 8082 |
+
+How they connect: phone and admin talk only to **backend**. Backend talks to MongoDB, Redis, and (when switched on) the Python services. Live voice is the one extra line: backend mints a short token, then the phone streams audio to Google.
+
 ---
 
 ## Table of contents
@@ -93,16 +149,13 @@ Fixly is a full-stack platform with four client-facing surfaces that share one b
 
 ```
 SIH-Fixly/
-├── frontend/                 # Flutter mobile app (customer + worker)
-├── backend/                  # Express API, sockets, queues, LangGraph agent
-├── FIXLY ADMIN PANEL/        # React cooperative / super-admin dashboard
-├── ai_ml/                    # Python ML microservices + start_all.py
-├── doc/                      # Architecture, guides, slide decks, per-layer notes
-├── docs/                     # Superpowers specs/plans (design docs)
-├── scripts/                  # HF Spaces deploy, ML keepalive
-├── docker-compose.flutter.yml
-├── render.yaml               # Render blueprint for ML Docker services
-└── README.md                 # This file
+├── frontend/                 # Flutter app (customer + worker) — frontend/README.md
+├── backend/                  # Express API, sockets, queues, Flexi — backend/README.md
+├── FIXLY ADMIN PANEL/        # React desk — its own README.md
+├── ai_ml/                    # Python helpers + start_all.py — ai_ml/README.md
+├── .github/workflows/        # ML keep-alive ping
+├── APP_FLOW.md               # Long architecture and sequence diagrams
+└── README.md                 # This file (map + setup)
 ```
 
 | Path | Role |
@@ -125,7 +178,7 @@ SIH-Fixly/
 
 ## 4. Feature map (SIH)
 
-Implemented and integrated across stack (see `doc/what_changes_we_have.md` for deeper notes):
+Implemented and integrated across the stack (folder READMEs and `APP_FLOW.md` spell out each piece):
 
 1. **Provider registration & verification** — selfie + ID → DeepFace match; duplicate Aadhaar/PAN checks; admin review band
 2. **Skill profiling & certification** — certificate upload + Gemini Vision OCR + name fuzzy match
@@ -199,7 +252,7 @@ flutter pub get
 flutter run --dart-define-from-file=dart_defines.json
 ```
 
-Optional Docker loop (ADB to host emulator): see `docker-compose.flutter.yml` and `doc/frontend/DOCKER_GUIDE.md`.
+Phone images: `frontend/Dockerfile` and `frontend/docker-compose.yml`. Day-to-day dev is `flutter run`, not Docker.
 
 ### 5.5 Config keys (Flutter)
 
@@ -350,7 +403,7 @@ Useful URLs when up:
 
 Fallback behavior: if Python discovery/KYC is down or toggles are `false`, Node uses built-in keyword / manual review paths so the app still works.
 
-Deep dive: `doc/HOW_AI_ML_IS_WORKING.md`, `doc/AI_CAPABILITIES_SUMMARY.md`, `doc/ai_ml/README.md`.
+Deep dive: [ai_ml/README.md](ai_ml/README.md) and [APP_FLOW.md](APP_FLOW.md) section 6.
 
 ---
 
@@ -384,7 +437,7 @@ Design notes for Live dual-lane / orchestration live under `docs/superpowers/`.
 
 Flutter clients: `socket_io_client`, `webrtc_call_service.dart`, Firebase Messaging setup under `lib/core/`.
 
-WebRTC integration guide: `doc/backend/WEBRTC_FLUTTER_INTEGRATION_GUIDE.md`.
+WebRTC signaling lives in `backend/sockets/webrtcCallSocket.js`. The phone side is `frontend/lib/services/webrtc_call_service.dart`. Audio after the handshake goes phone-to-phone, not through Node.
 
 ---
 
@@ -414,7 +467,7 @@ Primary Mongo collections (Mongoose models in `backend/models/`):
 `PENDING` → `APPROVED` / `SEARCHING` → `ACCEPTED` → `ARRIVED` → `ESTIMATION_GIVEN` → `READY_TO_START` → `IN_PROGRESS` → `PAYMENT_PENDING` → `COMPLETED`  
 (also `CANCELLED`)
 
-Architecture / ER diagrams: `doc/backend/gigconnect_architecture_and_er_diagram.md` (+ PDF).
+Field-level picture: Mongoose files in `backend/models/`, and the ER diagram in [APP_FLOW.md](APP_FLOW.md).
 
 ---
 
@@ -645,16 +698,11 @@ Each module under `ai_ml/*/tests` (where present) — run per package README.
 
 | Doc | Contents |
 |-----|----------|
-| `doc/HOW_AI_ML_IS_WORKING.md` | End-to-end AI wiring (Flutter ↔ Node ↔ Python ↔ Gemini) |
-| `doc/AI_CAPABILITIES_SUMMARY.md` | Capability inventory + gaps |
-| `doc/what_changes_we_have.md` | SIH feature completion summary |
-| `doc/HOW_FIXLY_WORKS_5_SLIDES.html` / `.pdf` | Executive narrative deck |
-| `doc/backend/*` | Backend README, architecture PDF/MD, WebRTC guide |
-| `doc/frontend/*` | Frontend notes + Docker guide |
-| `doc/ai_ml/*` | Per-ML-module docs |
-| `doc/APP_VERSION_AND_REDIS_GUIDE.md` | Version gate + Redis ops |
-| `docs/superpowers/specs/` · `plans/` | Design / implementation plans (e.g. Live dual-lane) |
-| `backend/README` | Auth API contract for clients |
+| [APP_FLOW.md](APP_FLOW.md) | Architecture diagrams and job sequences |
+| [frontend/README.md](frontend/README.md) | Phone app, inner `lib/` folders |
+| [backend/README.md](backend/README.md) | API, auth, queues, AWS notes |
+| [FIXLY ADMIN PANEL/README.md](FIXLY%20ADMIN%20PANEL/README.md) | Admin desk and `src/` layout |
+| [ai_ml/README.md](ai_ml/README.md) | The four Python programs and their ports |
 
 ---
 
@@ -673,7 +721,7 @@ Each module under `ai_ml/*/tests` (where present) — run per package README.
 ## 21. Team / SIH context
 
 - Platform name in code/docs may still appear as **GigConnect** / **SkillConnect** in older Swagger titles and backend messages — product brand is **Fixly**
-- AI/ML module ownership (historical): Service Discovery / Matching — Nikhil; Support / Reliability / Fair Price demos — Meenakshi (see `doc/ai_ml/README.md`)
+- AI/ML pieces that actually run are listed in [ai_ml/README.md](ai_ml/README.md). `start_all.py` comments also mention worker-matching and fair-price ports; those folders are not in this repo.
 - Problem framing: cooperative gig work for household & community services with fair wages, verification, and AI-assisted booking
 
 ---

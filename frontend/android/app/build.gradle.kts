@@ -28,6 +28,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Fat APK was >150MB: Mapbox + WebRTC + SoLoud × (v7a+arm64+x86_64).
+        // Phone ABIs only. Prefer: flutter build apk --split-per-abi | appbundle.
+        ndk {
+            abiFilters.clear()
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     buildTypes {
@@ -35,10 +41,19 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    // Store .so compressed in APK (smaller file). Install extracts them.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

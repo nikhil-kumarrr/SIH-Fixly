@@ -14,6 +14,35 @@
 
 ---
 
+## How this folder is built
+
+`server.js` is the front door. A request hits security middleware, then a file in `routes/`, then a function in `controllers/`, then a Mongoose model in `models/`. Slow work (email, push, image upload, booking reminders) is pushed onto BullMQ in `queues/` and run by `worker/`. Live GPS and call signals skip REST and use Socket.IO in `sockets/`.
+
+Repo map: [../README.md](../README.md).
+
+| Folder | What it does |
+|--------|----------------|
+| `routes/` | URL → controller. Mounted in `server.js` under `/api/auth`, `/api/bookings`, `/api/ai`, `/api/admin`, and the rest. |
+| `controllers/` | The rules. Booking status changes, payments, KYC, admin lists. |
+| `models/` | Mongo shapes. `Booking.js` status enum is the job timeline. `User.js` holds role, KYC, and a GeoJSON point for “who is near me”. |
+| `services/` | Shared helpers: FCM, payouts, who is allowed to take a job, settings from the database. |
+| `agent/` | Flexi. LangGraph in `agent/graph/graph.js` is `router` then `handler`. It can create a real booking. Chat memory is Redis. |
+| `sockets/` | `tracking.js` (rooms + `worker_location_update`) and `webrtcCallSocket.js` (call signals only; audio is peer-to-peer). |
+| `middleware/` | JWT + device id (`authMiddleware.js`), federation scope (`federationMiddleware.js`), rate limit, uploads. |
+| `config/` | Mongo, Redis, Socket.IO + Redis adapter, Firebase Admin, SMTP. |
+| `queues/` + `worker/` | Producers and consumers. `server.js` starts email, upload, notification, and scheduled-booking workers. |
+| `utils/` | Groq, Gemini vision, Gemini Live token, Cloudinary, mail templates. |
+| `scripts/` | Seed admin/data, tunnel, adb reverse. Not part of the running server. |
+| `tests/` | `npm test`. Bookings, WebRTC, AI, notifications, app version. |
+
+Booking statuses the server allows:
+
+`PENDING` → `APPROVED` → `SEARCHING` → `ACCEPTED` → `ARRIVED` → `ESTIMATION_GIVEN` → `READY_TO_START` → `IN_PROGRESS` → `PAYMENT_PENDING` → `COMPLETED` (also `CANCELLED`).
+
+Phone and admin never call Python directly. Discovery (`:8002`) and face match (`:8004`) are called from controllers when `AI_DISCOVERY_ENABLED` / `AI_VERIFY_ENABLED` are on.
+
+---
+
 ## 📌 Executive Overview
 
 **Fixly** (GigConnect Platform) is an on-demand home service and gig-worker cooperative platform. The backend is designed as an **Enterprise-Grade Modular Monolith** engineered for **stateless horizontal scalability** on **Amazon Web Services (AWS)**.

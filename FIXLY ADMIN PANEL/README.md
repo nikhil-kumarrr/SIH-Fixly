@@ -11,6 +11,25 @@
 
 ---
 
+## How this folder is built
+
+`src/main.jsx` boots React. `src/App.jsx` is the route table. A guest hits `/login`. After login, `ProtectedRoute` wraps `Layout` (sidebar + header) and the page.
+
+Repo map: [../README.md](../README.md). The desk talks only to the Node API. Federation admins see one cooperative because the API filters them. Hiding a button here is not the security check.
+
+| Folder | What it does |
+|--------|----------------|
+| `src/pages/` | One folder per screen: Dashboard, Bookings, Workers, Approvals (KYC), Customers, Services, Payments, Insurance, Reviews, Reports, Analytics, AI Insights, Notifications, Support, Settings (keys + force-update), Federations, Language, Theme preview. |
+| `src/components/` | Shared pieces. `layout/` is the frame. `map/WorkersLeafletMap.jsx` is the OpenStreetMap worker map. `charts/` is Recharts. `modals/` assigns a worker, reschedules, sends a notice, dispatches SOS. `auth/RequireRole.jsx` hides a block by role. |
+| `src/services/api.js` | Axios. Attaches the admin JWT. On Netlify, `/api` is proxied so the browser stays on HTTPS. |
+| `src/context/` | `AppContext` (logged-in admin and role), `LanguageContext` (English/Hindi), `ToastContext`. |
+| `src/data/` | Sample rows and translation strings. If a number never changes after a real booking, that page is still reading this folder instead of the API. |
+| `src/views/` | Older screen bodies. `App.jsx` mounts `src/pages/`. A fix only in `views/` does nothing if the route uses `pages/`. |
+| `src/utils/` | Map center for an Indian state or district. |
+| `public/` | Logo and Netlify `_redirects` so deep links still load the app. Proxy rules are in `netlify.toml`. |
+
+---
+
 ## 📌 Executive Overview
 
 The **Fixly Admin Web Dashboard** is a high-performance, responsive Single-Page Application (SPA) built with **React 18**, **Vite 5**, and **Tailwind CSS**. It serves as the primary nerve center for the **Fixly Gig-Worker Cooperative Platform**, enabling cooperative federations, district societies, and super-administrators to monitor operations, arbitrate disputes, audit KYC compliance, and ensure 100% fair-wage escrow distribution.
