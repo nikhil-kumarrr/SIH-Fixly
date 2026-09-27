@@ -8,6 +8,7 @@ import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerPriceEstimationPage extends StatefulWidget {
   const WorkerPriceEstimationPage({super.key, required this.bookingId});
@@ -63,7 +64,7 @@ class _WorkerPriceEstimationPageState extends State<WorkerPriceEstimationPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loadError = e.toString();
+        _loadError = ApiException.fromError(e);
         _loadingBooking = false;
       });
     }
@@ -118,7 +119,7 @@ class _WorkerPriceEstimationPageState extends State<WorkerPriceEstimationPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      ToastUtils.showError(context: context, message: e.toString());
+      ToastUtils.showError(context: context, message: ApiException.fromError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

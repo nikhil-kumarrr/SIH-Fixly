@@ -9,6 +9,7 @@ import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
 import '../cubit/active_job_cubit.dart';
 import '../../../../core/utils/toast_utils.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerOtpEntryPage extends StatefulWidget {
   const WorkerOtpEntryPage({super.key, required this.bookingId});
@@ -42,7 +43,7 @@ class _WorkerOtpEntryPageState extends State<WorkerOtpEntryPage> {
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = ApiException.fromError(e);
         _isLoading = false;
       });
     }

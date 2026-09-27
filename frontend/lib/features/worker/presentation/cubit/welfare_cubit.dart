@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WelfareState extends Equatable {
   final bool isLoading;
@@ -90,7 +91,7 @@ class WelfareCubit extends Cubit<WelfareState> {
         resources: resources,
       ));
     } catch (e) {
-      emit(state.copyWith(isLoading: false, error: e.toString()));
+      emit(state.copyWith(isLoading: false, error: ApiException.fromError(e)));
     }
   }
 }

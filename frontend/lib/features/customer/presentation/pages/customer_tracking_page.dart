@@ -16,6 +16,7 @@ import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
 import '../cubit/booking_flow_cubit.dart';
 import '../cubit/tracking_cubit.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerTrackingPage extends StatefulWidget {
   const CustomerTrackingPage({super.key, this.bookingId});
@@ -602,7 +603,7 @@ class _CustomerTrackingPageState extends State<CustomerTrackingPage> {
                                   if (context.mounted) {
                                     ToastUtils.showError(
                                       context: context,
-                                      message: e.toString(),
+                                      message: ApiException.fromError(e),
                                     );
                                   }
                                 }

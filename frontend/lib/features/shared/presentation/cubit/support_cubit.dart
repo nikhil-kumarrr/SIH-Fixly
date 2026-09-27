@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/network/api_exception.dart';
 import '../../data/support_api_repository.dart';
 import '../../../../core/network/media_upload_api.dart';
 import '../../../../shared/data/mock/mock_repository.dart';
@@ -174,7 +175,10 @@ class SupportCubit extends Cubit<SupportState> {
         emit(state.copyWith(isSending: false));
       }
     } catch (e) {
-      emit(state.copyWith(isSending: false, errorMessage: 'Failed to upload media: $e'));
+      emit(state.copyWith(
+        isSending: false,
+        errorMessage: ApiException.fromError(e),
+      ));
     }
   }
 

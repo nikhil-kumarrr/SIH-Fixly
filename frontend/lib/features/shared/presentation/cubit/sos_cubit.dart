@@ -129,7 +129,7 @@ class SosCubit extends Cubit<SosState> {
         await refreshEstimate(services.first.id);
       }
     } catch (e) {
-      emit(state.copyWith(isLoadingContacts: false, error: e.toString()));
+      emit(state.copyWith(isLoadingContacts: false, error: ApiException.fromError(e)));
     }
   }
 
@@ -156,7 +156,7 @@ class SosCubit extends Cubit<SosState> {
     } on ApiException catch (e) {
       emit(state.copyWith(isLoadingEstimate: false, error: e.message));
     } catch (e) {
-      emit(state.copyWith(isLoadingEstimate: false, error: e.toString()));
+      emit(state.copyWith(isLoadingEstimate: false, error: ApiException.fromError(e)));
     }
   }
 

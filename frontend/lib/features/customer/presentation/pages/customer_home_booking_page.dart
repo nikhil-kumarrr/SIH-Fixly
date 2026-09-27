@@ -11,6 +11,7 @@ import '../../../../core/widgets/core_widgets.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/models/models.dart';
 import '../../../home/data/home_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerHomeBookingPage extends StatefulWidget {
   const CustomerHomeBookingPage({super.key});
@@ -50,7 +51,7 @@ class _CustomerHomeBookingPageState extends State<CustomerHomeBookingPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = ApiException.fromError(e);
       });
     }
   }

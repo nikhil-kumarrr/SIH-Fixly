@@ -61,7 +61,7 @@ class WalletCubit extends Cubit<WalletState> {
     } on ApiException catch (e) {
       emit(state.copyWith(status: WalletStatus.failure, error: e.message));
     } catch (e) {
-      emit(state.copyWith(status: WalletStatus.failure, error: e.toString()));
+      emit(state.copyWith(status: WalletStatus.failure, error: ApiException.fromError(e)));
     }
   }
 
@@ -80,7 +80,7 @@ class WalletCubit extends Cubit<WalletState> {
       emit(state.copyWith(isWithdrawing: false, error: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(isWithdrawing: false, error: e.toString()));
+      emit(state.copyWith(isWithdrawing: false, error: ApiException.fromError(e)));
       return false;
     }
   }
@@ -113,7 +113,7 @@ class WalletCubit extends Cubit<WalletState> {
       emit(state.copyWith(isUpdatingPayout: false, error: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(isUpdatingPayout: false, error: e.toString()));
+      emit(state.copyWith(isUpdatingPayout: false, error: ApiException.fromError(e)));
       return false;
     }
   }

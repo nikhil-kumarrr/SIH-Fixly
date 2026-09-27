@@ -7,6 +7,7 @@ import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../home/data/home_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerAiDiscoveryPage extends StatefulWidget {
   const CustomerAiDiscoveryPage({super.key});
@@ -31,7 +32,7 @@ class _CustomerAiDiscoveryPageState extends State<CustomerAiDiscoveryPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return Center(child: Text(snap.error.toString()));
+            return Center(child: Text(ApiException.fromError(snap.error!)));
           }
           final services = snap.data ?? const [];
 

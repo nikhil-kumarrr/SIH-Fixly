@@ -166,9 +166,7 @@ class SearchCubit extends Cubit<SearchState> {
         ),
       );
     } catch (e) {
-      final msg = e is ApiException
-          ? e.message
-          : e.toString().replaceFirst('Exception: ', '');
+      final msg = ApiException.fromError(e);
       emit(
         state.copyWith(
           nearbyWorkers: const [],

@@ -36,7 +36,7 @@ class NotificationsCubit extends Cubit<NotificationsState> {
       emit(
         state.copyWith(
           status: NotificationsStatus.failure,
-          errorMessage: error.toString(),
+          errorMessage: ApiException.fromError(error),
         ),
       );
     }

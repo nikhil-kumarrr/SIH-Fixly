@@ -309,9 +309,7 @@ class ApiClient {
         lower.contains('network is unreachable') ||
         lower.contains('no internet') ||
         lower.contains('connection errored')) {
-      final host = ApiConfig.baseUrl;
-      message =
-          'Cannot reach API ($host). Check Wi‑Fi/data and that the server is online.';
+      message = 'No internet connection';
     }
     return ApiException(message, statusCode: e.response?.statusCode);
   }

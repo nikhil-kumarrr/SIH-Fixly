@@ -14,6 +14,7 @@ import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
 import '../../../reviews/data/reviews_api_repository.dart';
 import '../cubit/booking_flow_cubit.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerRatingPage extends StatefulWidget {
   const CustomerRatingPage({super.key, this.bookingId});
@@ -182,7 +183,7 @@ class _CustomerRatingPageState extends State<CustomerRatingPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ToastUtils.showToast(context: context, message: e.toString());
+      ToastUtils.showToast(context: context, message: ApiException.fromError(e));
       return;
     }
 

@@ -9,6 +9,7 @@ import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
 import '../cubit/booking_flow_cubit.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerEstimationReviewPage extends StatefulWidget {
   const CustomerEstimationReviewPage({super.key, required this.bookingId});
@@ -56,7 +57,7 @@ class _CustomerEstimationReviewPageState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = ApiException.fromError(e);
         _loading = false;
       });
     }
@@ -77,7 +78,7 @@ class _CustomerEstimationReviewPageState
       context.goRefreshing(RouteNames.bookingDetailPath(widget.bookingId));
     } catch (e) {
       if (!mounted) return;
-      ToastUtils.showError(context: context, message: e.toString());
+      ToastUtils.showError(context: context, message: ApiException.fromError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -117,7 +118,7 @@ class _CustomerEstimationReviewPageState
       context.goRefreshing(RouteNames.customerOrders);
     } catch (e) {
       if (!mounted) return;
-      ToastUtils.showError(context: context, message: e.toString());
+      ToastUtils.showError(context: context, message: ApiException.fromError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

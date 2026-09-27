@@ -159,7 +159,7 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
     } on ApiException catch (e) {
       _safeEmit(state.copyWith(isLoading: false, errorMessage: e.message));
     } catch (e) {
-      _safeEmit(state.copyWith(isLoading: false, errorMessage: e.toString()));
+      _safeEmit(state.copyWith(isLoading: false, errorMessage: ApiException.fromError(e)));
     }
   }
 

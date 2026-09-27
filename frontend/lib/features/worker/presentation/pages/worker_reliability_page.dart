@@ -5,6 +5,7 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../auth/data/auth_api_repository.dart';
 import '../../../workers/data/workers_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerReliabilityPage extends StatefulWidget {
   const WorkerReliabilityPage({super.key});
@@ -55,7 +56,7 @@ class _WorkerReliabilityPageState extends State<WorkerReliabilityPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = ApiException.fromError(e);
         _loading = false;
       });
     }

@@ -8,6 +8,7 @@ import '../../../../app/theme/app_radius.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/theme_x.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/network/api_exception.dart';
 import '../../../../core/l10n/category_localizer.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
@@ -69,7 +70,7 @@ class _WorkerProfilePageState extends State<WorkerProfilePage> {
       ToastUtils.showToast(context: context, message: 'Current location saved to your profile');
     } catch (e) {
       if (!mounted) return;
-      ToastUtils.showToast(context: context, message: 'Could not save location: $e');
+      ToastUtils.showToast(context: context, message: ApiException.fromError(e));
     } finally {
       if (mounted) setState(() => _refreshingLocation = false);
     }

@@ -6,6 +6,7 @@ import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../auth/data/auth_api_repository.dart';
 import '../../../workers/data/workers_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerCooperativePage extends StatefulWidget {
   const WorkerCooperativePage({super.key});
@@ -60,7 +61,7 @@ class _WorkerCooperativePageState extends State<WorkerCooperativePage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = ApiException.fromError(e);
         _isLoading = false;
       });
     }
@@ -546,7 +547,7 @@ class _WorkerCooperativePageState extends State<WorkerCooperativePage> {
       await _loadData();
     } catch (e) {
       if (!mounted) return;
-      ToastUtils.showError(context: context, message: e.toString());
+      ToastUtils.showError(context: context, message: ApiException.fromError(e));
     }
   }
 

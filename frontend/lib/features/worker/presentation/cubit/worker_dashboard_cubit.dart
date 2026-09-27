@@ -97,7 +97,7 @@ class WorkerDashboardCubit extends Cubit<WorkerDashboardState> {
     } on ApiException catch (e) {
       emit(state.copyWith(status: WorkerDashboardStatus.failure, error: e.message));
     } catch (e) {
-      emit(state.copyWith(status: WorkerDashboardStatus.failure, error: e.toString()));
+      emit(state.copyWith(status: WorkerDashboardStatus.failure, error: ApiException.fromError(e)));
     }
   }
 
@@ -162,7 +162,7 @@ class WorkerDashboardCubit extends Cubit<WorkerDashboardState> {
       emit(state.copyWith(clearAcceptingJobId: true, error: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(clearAcceptingJobId: true, error: e.toString()));
+      emit(state.copyWith(clearAcceptingJobId: true, error: ApiException.fromError(e)));
       return false;
     }
   }
@@ -177,7 +177,7 @@ class WorkerDashboardCubit extends Cubit<WorkerDashboardState> {
       ));
       return true;
     } catch (e) {
-      emit(state.copyWith(error: e.toString()));
+      emit(state.copyWith(error: ApiException.fromError(e)));
       return false;
     }
   }

@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../workers/data/workers_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerWorkersPage extends StatefulWidget {
   const CustomerWorkersPage({super.key});
@@ -37,7 +38,7 @@ class _CustomerWorkersPageState extends State<CustomerWorkersPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(snap.error.toString()),
+                  Text(ApiException.fromError(snap.error!)),
                   const SizedBox(height: 12),
                   PrimaryButton(
                     label: 'Retry',

@@ -7,6 +7,7 @@ import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../shared/presentation/cubit/profile_cubit.dart';
 import '../../../workers/data/workers_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerRateSettingsPage extends StatefulWidget {
   const WorkerRateSettingsPage({super.key});
@@ -130,7 +131,7 @@ class _WorkerRateSettingsPageState extends State<WorkerRateSettingsPage> {
     } catch (e) {
       if (!mounted) return;
       // If API fails, try local profile fallback
-      _fallbackToLocalProfile(e.toString());
+      _fallbackToLocalProfile(ApiException.fromError(e));
     }
   }
 
@@ -238,7 +239,7 @@ class _WorkerRateSettingsPageState extends State<WorkerRateSettingsPage> {
       }
     } catch (e) {
       if (mounted) {
-        ToastUtils.showError(context: context, message: e.toString());
+        ToastUtils.showError(context: context, message: ApiException.fromError(e));
       }
     } finally {
       if (mounted) {

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_radius.dart';
 import '../../../../app/theme/app_spacing.dart';
+import '../../../../core/network/api_exception.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../cubit/welfare_cubit.dart';
 
@@ -40,7 +41,7 @@ class _WorkerWelfareView extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open page: $e')),
+          SnackBar(content: Text(ApiException.fromError(e))),
         );
       }
     }

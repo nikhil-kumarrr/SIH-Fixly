@@ -15,6 +15,7 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/map_constants.dart';
 import '../../../../core/location/app_location.dart';
 import '../../../../core/location/location_service.dart';
+import '../../../../core/network/api_exception.dart';
 import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../core/widgets/fixly_map_view.dart';
@@ -2602,7 +2603,7 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
             _errorMessage =
                 'Native video plugin was newly added to the project.\nPlease do a full app rebuild / restart (run "flutter run" in terminal) to compile the native video player plugin into the app.';
           } else {
-            _errorMessage = 'Video player error: ${e.message ?? e.toString()}';
+            _errorMessage = ApiException.fromError(e);
           }
         });
       }
@@ -2610,7 +2611,7 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       if (mounted) {
         setState(() {
           _hasError = true;
-          _errorMessage = 'Could not load video: $e';
+          _errorMessage = ApiException.fromError(e);
         });
       }
     }

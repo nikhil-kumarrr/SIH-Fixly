@@ -16,6 +16,7 @@ import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../auth/presentation/cubit/app_session_cubit.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class OrderHistoryPage extends StatefulWidget {
   const OrderHistoryPage({super.key, this.showBack = true});
@@ -289,7 +290,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage>
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      snap.error.toString().replaceAll('ApiException: ', ''),
+                      ApiException.fromError(snap.error!),
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).textTheme.bodySmall?.color,

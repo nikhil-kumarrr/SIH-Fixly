@@ -5,6 +5,7 @@ import '../../../../app/theme/theme_x.dart';
 import '../../../../core/widgets/app_motion.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../payments/data/payments_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerPaymentsPage extends StatefulWidget {
   const CustomerPaymentsPage({super.key});
@@ -87,7 +88,7 @@ class _CustomerPaymentsPageState extends State<CustomerPaymentsPage> {
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      snap.error.toString().replaceAll('ApiException: ', ''),
+                      ApiException.fromError(snap.error!),
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).textTheme.bodySmall?.color,

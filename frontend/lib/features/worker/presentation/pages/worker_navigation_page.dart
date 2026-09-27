@@ -17,6 +17,7 @@ import '../../../../core/utils/tracking_helpers.dart';
 import '../../../../core/widgets/fixly_map_view.dart';
 import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerNavigationPage extends StatefulWidget {
   const WorkerNavigationPage({super.key, this.bookingId});
@@ -123,7 +124,7 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = ApiException.fromError(e);
       });
     }
   }
@@ -361,7 +362,7 @@ class _WorkerNavigationPageState extends State<WorkerNavigationPage> {
                     }
                   } catch (e) {
                     if (mounted) {
-                      ToastUtils.showToast(context: context, message: e.toString());
+                      ToastUtils.showToast(context: context, message: ApiException.fromError(e));
                     }
                   }
                 }

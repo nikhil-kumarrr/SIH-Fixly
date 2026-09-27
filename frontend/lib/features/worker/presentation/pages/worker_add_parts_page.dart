@@ -8,6 +8,7 @@ import '../../../../core/utils/toast_utils.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class _BillingPart {
   _BillingPart({
@@ -169,7 +170,7 @@ class _WorkerAddPartsPageState extends State<WorkerAddPartsPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ToastUtils.showError(context: context, message: e.toString());
+      ToastUtils.showError(context: context, message: ApiException.fromError(e));
     }
   }
 

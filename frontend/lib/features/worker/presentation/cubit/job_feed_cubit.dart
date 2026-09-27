@@ -37,7 +37,7 @@ class JobFeedCubit extends Cubit<JobFeedState> {
     } on ApiException catch (e) {
       emit(state.copyWith(status: JobFeedStatus.failure, error: e.message));
     } catch (e) {
-      emit(state.copyWith(status: JobFeedStatus.failure, error: e.toString()));
+      emit(state.copyWith(status: JobFeedStatus.failure, error: ApiException.fromError(e)));
     }
   }
 
@@ -88,7 +88,7 @@ class JobFeedCubit extends Cubit<JobFeedState> {
       emit(state.copyWith(clearActingJobId: true, error: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(clearActingJobId: true, error: e.toString()));
+      emit(state.copyWith(clearActingJobId: true, error: ApiException.fromError(e)));
       return false;
     }
   }
@@ -104,7 +104,7 @@ class JobFeedCubit extends Cubit<JobFeedState> {
       emit(state.copyWith(clearActingJobId: true, error: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(clearActingJobId: true, error: e.toString()));
+      emit(state.copyWith(clearActingJobId: true, error: ApiException.fromError(e)));
       return false;
     }
   }
@@ -120,7 +120,7 @@ class JobFeedCubit extends Cubit<JobFeedState> {
       emit(state.copyWith(clearActingJobId: true, error: e.message));
       return false;
     } catch (e) {
-      emit(state.copyWith(clearActingJobId: true, error: e.toString()));
+      emit(state.copyWith(clearActingJobId: true, error: ApiException.fromError(e)));
       return false;
     }
   }

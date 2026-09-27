@@ -13,6 +13,7 @@ import '../../../../core/l10n/category_localizer.dart';
 import '../../../../shared/models/models.dart';
 import '../../../shared/presentation/widgets/service_scope_widgets.dart';
 import '../../../workers/data/workers_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerWorkerProfilePage extends StatefulWidget {
   const CustomerWorkerProfilePage({
@@ -497,8 +498,9 @@ class _CustomerWorkerProfilePageState extends State<CustomerWorkerProfilePage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      snap.error?.toString().replaceAll('ApiException: ', '') ??
-                          'Unable to load worker information.',
+                      snap.error == null
+                          ? 'Unable to load worker information.'
+                          : ApiException.fromError(snap.error!),
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Theme.of(context).hintColor,

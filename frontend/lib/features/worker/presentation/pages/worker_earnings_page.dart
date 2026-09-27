@@ -7,6 +7,7 @@ import '../../../../app/theme/theme_x.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/widgets/core_widgets.dart';
 import '../../../payments/data/payments_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerEarningsPage extends StatefulWidget {
   const WorkerEarningsPage({super.key});
@@ -64,7 +65,7 @@ class _WorkerEarningsPageState extends State<WorkerEarningsPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = ApiException.fromError(e);
         _loading = false;
       });
     }

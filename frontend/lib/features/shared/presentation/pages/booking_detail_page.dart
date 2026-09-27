@@ -291,7 +291,7 @@ class _BookingDetails extends StatelessWidget {
                   if (context.mounted) {
                     ToastUtils.showError(
                       context: context,
-                      message: e.toString(),
+                      message: ApiException.fromError(e),
                     );
                   }
                 }
@@ -1968,7 +1968,7 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       if (mounted) {
         setState(() {
           _hasError = true;
-          _errorMessage = 'Could not load video: $e';
+          _errorMessage = ApiException.fromError(e);
         });
       }
     }
@@ -2947,7 +2947,7 @@ class _StatusActionsState extends State<_StatusActions> {
                     if (context.mounted) {
                       ToastUtils.showToast(
                         context: context,
-                        message: 'Failed to update: $e',
+                        message: ApiException.fromError(e),
                       );
                     }
                   }

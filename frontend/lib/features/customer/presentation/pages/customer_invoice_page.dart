@@ -73,7 +73,7 @@ class _CustomerInvoicePageState extends State<CustomerInvoicePage>
           }
           if (snapshot.hasError || !snapshot.hasData) {
             return Center(
-              child: Text(snapshot.error?.toString() ?? 'Invoice unavailable'),
+              child: Text(snapshot.error == null ? 'Invoice unavailable' : ApiException.fromError(snapshot.error!)),
             );
           }
           return _InvoiceContent(
@@ -524,7 +524,7 @@ class _InvoiceContentState extends State<_InvoiceContent> {
       if (!mounted) return;
       ToastUtils.showToast(
         context: context,
-        message: 'Could not generate PDF: ${e.toString()}',
+        message: 'Could not generate PDF: ${ApiException.fromError(e)}',
       );
     } finally {
       if (mounted) setState(() => _isDownloading = false);

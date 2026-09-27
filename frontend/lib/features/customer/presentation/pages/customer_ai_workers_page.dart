@@ -8,6 +8,7 @@ import '../../../../shared/models/models.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/l10n/category_localizer.dart';
 import '../../../workers/data/workers_api_repository.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerAiWorkersPage extends StatefulWidget {
   const CustomerAiWorkersPage({super.key});
@@ -32,7 +33,7 @@ class _CustomerAiWorkersPageState extends State<CustomerAiWorkersPage> {
           }
           if (snap.hasError) {
             return Center(
-              child: Text(snap.error.toString()),
+              child: Text(ApiException.fromError(snap.error!)),
             );
           }
           final workers = snap.data ?? const [];

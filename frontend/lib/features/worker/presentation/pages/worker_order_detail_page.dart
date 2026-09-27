@@ -19,6 +19,7 @@ import '../../../../shared/models/models.dart';
 import '../../../bookings/data/bookings_api_repository.dart';
 import '../../../shared/data/service_scope_data.dart';
 import '../cubit/job_feed_cubit.dart';
+import '../../../../core/network/api_exception.dart';
 
 class WorkerOrderDetailPage extends StatefulWidget {
   const WorkerOrderDetailPage({required this.jobId, super.key});
@@ -66,7 +67,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage>
       if (!mounted) return;
       setState(() {
         _feedJob = context.read<JobFeedCubit>().jobById(widget.jobId);
-        _error = e.toString();
+        _error = ApiException.fromError(e);
         _loading = false;
       });
     }
@@ -87,7 +88,7 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _accepting = false);
-      ToastUtils.showError(context: context, message: e.toString());
+      ToastUtils.showError(context: context, message: ApiException.fromError(e));
     }
   }
 

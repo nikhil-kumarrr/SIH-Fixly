@@ -170,7 +170,7 @@ class _WorkerPayoutAccountSheetState extends State<WorkerPayoutAccountSheet> {
       if (mounted) {
         ToastUtils.showError(
           context: context,
-          message: 'Could not update payout account: $e',
+          message: ApiException.fromError(e),
         );
       }
     } finally {

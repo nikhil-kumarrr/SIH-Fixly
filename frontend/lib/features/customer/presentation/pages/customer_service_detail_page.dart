@@ -17,6 +17,7 @@ import '../../../home/data/home_api_repository.dart';
 import '../../../shared/presentation/widgets/service_scope_widgets.dart';
 import '../../../workers/data/workers_api_repository.dart';
 import '../cubit/booking_flow_cubit.dart';
+import '../../../../core/network/api_exception.dart';
 
 class CustomerServiceDetailPage extends StatefulWidget {
   const CustomerServiceDetailPage({required this.serviceId, super.key});
@@ -128,7 +129,7 @@ class _CustomerServiceDetailPageState extends State<CustomerServiceDetailPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      snap.error?.toString() ?? 'Could not find details for this service.',
+                      snap.error == null ? 'Could not find details for this service.' : ApiException.fromError(snap.error!),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
                     ),
