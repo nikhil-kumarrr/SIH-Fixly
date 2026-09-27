@@ -256,11 +256,12 @@ class _WorkerOrderDetailPageState extends State<WorkerOrderDetailPage>
     return AppScaffold(
       title: context.l10n.orderDetails,
       showBack: true,
+      padding: EdgeInsets.zero,
       body: AppRefreshIndicator(
         onRefresh: _resolve,
         child: SingleChildScrollView(
           physics: appRefreshScrollPhysics,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

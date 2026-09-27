@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 // url_launcher removed — AI chat never opens tel: dialer; use in-app WebRTC.
 
@@ -73,10 +72,7 @@ class _ChatMessage {
 
 /// Character-by-character typewriter text animation without a cursor.
 class _TypewriterText extends StatefulWidget {
-  const _TypewriterText({
-    required this.text,
-    required this.style,
-  });
+  const _TypewriterText({required this.text, required this.style});
 
   final String text;
   final TextStyle style;
@@ -131,12 +127,11 @@ class _TypewriterTextState extends State<_TypewriterText> {
 
   @override
   Widget build(BuildContext context) {
-    final displayText =
-        widget.text.substring(0, _charIndex.clamp(0, widget.text.length));
-    return Text(
-      displayText,
-      style: widget.style,
+    final displayText = widget.text.substring(
+      0,
+      _charIndex.clamp(0, widget.text.length),
     );
+    return Text(displayText, style: widget.style);
   }
 }
 
@@ -158,7 +153,6 @@ class CustomerAiHelperPage extends StatefulWidget {
 class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
   final _queryController = TextEditingController();
   final _scrollController = ScrollController();
-  final _picker = ImagePicker();
   final _speechService = SpeechService();
   final _liveService = GeminiLiveService();
   final _liveCapture = LivePcmCapture();
@@ -184,41 +178,52 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
   // --- Live Voice Talking Mode ---
   bool _isLiveMode = false;
+
   /// True when Gemini Live PCM path active (no STT click loop).
   bool _livePcmActive = false;
   LiveVoiceState _liveVoiceState = LiveVoiceState.paused;
   String _liveSpokenText = '';
   String _liveModelDraft = '';
   bool _liveBridgeReady = false;
+
   /// Chat speaker uses Gemini Live speak-only (same Leda voice as live mode).
   bool _chatGeminiSpeak = false;
   Future<void>? _bridgeConnectInFlight;
   Future<void>? _chatSpeakInFlight;
+
   /// Local barge-in: need strong voice for ~450ms (ignore soft echo).
   int _bargeHoldMs = 0;
   static const _bargeRmsThreshold = 0.62;
   static const _bargeHoldNeedMs = 500;
+
   /// Endpointer: after user speech, 4s quiet → hit API. Speak again → cancel.
   Timer? _utteranceCommitTimer;
   bool _hadSpeechInUtterance = false;
-  static const _silenceCommitGap = Duration(milliseconds: 2000); // 2s natural silence commit
+  static const _silenceCommitGap = Duration(
+    milliseconds: 2000,
+  ); // 2s natural silence commit
   bool _liveVoiceFallback = false;
   Timer? _liveReconnectTimer;
   String _liveUserDraft = '';
+
   /// Greeting only after Live + PCM player + capture ready.
   bool _pendingLiveGreeting = false;
   bool _liveGreetingDone = false;
   bool _isStartingLiveMode = false;
   DateTime? _lastListeningStartedAt;
+
   /// One utterance → one brain (Live tool OR chat, never both).
   String? _lastHandledUtteranceNorm;
   DateTime? _lastHandledUtteranceAt;
+
   /// Monotonically increasing ID — incremented on each new STT session.
   /// Callbacks capture the ID at creation time and check before acting,
   /// ensuring stale callbacks from old sessions are silently ignored.
   int _sttSessionId = 0;
   OverlayEntry? _glowOverlayEntry;
-  final ValueNotifier<double> _voiceActivityNotifier = ValueNotifier<double>(0.0);
+  final ValueNotifier<double> _voiceActivityNotifier = ValueNotifier<double>(
+    0.0,
+  );
   // TEMP: siri_orb OrbController commented while testing FixlyLiveOrb GIF.
   // late final OrbController _orbController = OrbController(initialAmplitude: 0.15);
 
@@ -335,6 +340,7 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     };
     return map[lang] ?? 'en-IN';
   }
+
   bool get _allowsHinglish =>
       _selectedLanguage == 'en' || _selectedLanguage == 'hi';
 
@@ -359,21 +365,23 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
   void _initConversation() {
     _suggestedReplies = _getDefaultSuggestedReplies(_selectedLanguage);
-    final hinglishNote = _allowsHinglish
-        ? (_selectedLanguage == 'hi'
-            ? ' आप Hinglish में भी बोल सकते हैं।'
-            : ' You can also speak in Hinglish.')
-        : '';
+    final hinglishNote =
+        _allowsHinglish
+            ? (_selectedLanguage == 'hi'
+                ? ' आप Hinglish में भी बोल सकते हैं।'
+                : ' You can also speak in Hinglish.')
+            : '';
     _messages.add(
       _ChatMessage(
         isBot: true,
-        text: _selectedLanguage == 'hi'
-            ? (AppConstants.voiceAiEnabled
-                ? 'नमस्ते! मैं फिक्सली एआई हूँ। बताइए घर में क्या समस्या है, या Live Talk दबाएं।$hinglishNote'
-                : 'नमस्ते! मैं फिक्सली एआई हूँ। चैट में बताइए घर में क्या समस्या है।$hinglishNote')
-            : (AppConstants.voiceAiEnabled
-                ? 'Hello! I am Fixly AI. Tell me the home issue, or tap Live Talk.$hinglishNote'
-                : 'Hello! I am Fixly AI. Tell me the home issue in chat.$hinglishNote'),
+        text:
+            _selectedLanguage == 'hi'
+                ? (AppConstants.voiceAiEnabled
+                    ? 'नमस्ते! मैं फिक्सली एआई हूँ। बताइए घर में क्या समस्या है, या Live Talk दबाएं।$hinglishNote'
+                    : 'नमस्ते! मैं फिक्सली एआई हूँ। चैट में बताइए घर में क्या समस्या है।$hinglishNote')
+                : (AppConstants.voiceAiEnabled
+                    ? 'Hello! I am Fixly AI. Tell me the home issue, or tap Live Talk.$hinglishNote'
+                    : 'Hello! I am Fixly AI. Tell me the home issue in chat.$hinglishNote'),
         timestamp: DateTime.now(),
         action: 'PROMPT_CATEGORY',
       ),
@@ -386,7 +394,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     setState(() {
       _selectedLanguage = lang;
       _conversationState['language'] = lang;
-      if (_messages.length <= 1 && (_messages.isEmpty || _messages.first.isBot)) {
+      if (_messages.length <= 1 &&
+          (_messages.isEmpty || _messages.first.isBot)) {
         _messages.clear();
         _initConversation();
       } else if (!_awaitingReply) {
@@ -424,27 +433,28 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
       try {
         final overlay = Overlay.of(context, rootOverlay: true);
         _glowOverlayEntry = OverlayEntry(
-          builder: (overlayCtx) => Positioned.fill(
-            child: IgnorePointer(
-              child: ValueListenableBuilder<double>(
-                valueListenable: _voiceActivityNotifier,
-                builder: (context, voiceVal, _) {
-                  final glowMode = switch (_liveVoiceState) {
-                    LiveVoiceState.listening => SiriGlowMode.listening,
-                    LiveVoiceState.thinking => SiriGlowMode.thinking,
-                    LiveVoiceState.speaking => SiriGlowMode.speaking,
-                    LiveVoiceState.paused => SiriGlowMode.idle,
-                  };
-                  return SiriGlowFrame(
-                    active: true,
-                    mode: glowMode,
-                    voiceActivity: voiceVal,
-                    child: const SizedBox.expand(),
-                  );
-                },
+          builder:
+              (overlayCtx) => Positioned.fill(
+                child: IgnorePointer(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _voiceActivityNotifier,
+                    builder: (context, voiceVal, _) {
+                      final glowMode = switch (_liveVoiceState) {
+                        LiveVoiceState.listening => SiriGlowMode.listening,
+                        LiveVoiceState.thinking => SiriGlowMode.thinking,
+                        LiveVoiceState.speaking => SiriGlowMode.speaking,
+                        LiveVoiceState.paused => SiriGlowMode.idle,
+                      };
+                      return SiriGlowFrame(
+                        active: true,
+                        mode: glowMode,
+                        voiceActivity: voiceVal,
+                        child: const SizedBox.expand(),
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
-          ),
         );
         overlay.insert(_glowOverlayEntry!);
       } catch (e) {
@@ -494,9 +504,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
         _messages.add(
           _ChatMessage(
             isBot: true,
-            text: _selectedLanguage == 'hi'
-                ? 'वर्कर ने बुकिंग स्वीकार कर ली${booking.workerName != null ? ' (${booking.workerName})' : ''}। अब आप लाइव ट्रैक कर सकते हैं।'
-                : 'A worker accepted your booking${booking.workerName != null ? ' (${booking.workerName})' : ''}. You can track them live now.',
+            text:
+                _selectedLanguage == 'hi'
+                    ? 'वर्कर ने बुकिंग स्वीकार कर ली${booking.workerName != null ? ' (${booking.workerName})' : ''}। अब आप लाइव ट्रैक कर सकते हैं।'
+                    : 'A worker accepted your booking${booking.workerName != null ? ' (${booking.workerName})' : ''}. You can track them live now.',
             timestamp: DateTime.now(),
           ),
         );
@@ -511,13 +522,14 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     // Prefer Mongo ObjectId for poll/API — human bookingId alone can 404 weird paths.
     final mongoId = (booking?['_id'] ?? booking?['id'])?.toString().trim();
     final humanId = booking?['bookingId']?.toString().trim();
-    final bookingId = (mongoId != null &&
-            mongoId.isNotEmpty &&
-            RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(mongoId))
-        ? mongoId
-        : (humanId != null && humanId.isNotEmpty && !humanId.startsWith('#')
-            ? humanId
-            : null);
+    final bookingId =
+        (mongoId != null &&
+                mongoId.isNotEmpty &&
+                RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(mongoId))
+            ? mongoId
+            : (humanId != null && humanId.isNotEmpty && !humanId.startsWith('#')
+                ? humanId
+                : null);
     if (bookingId == null || bookingId.isEmpty) return;
     _startBookingAcceptPoll(bookingId);
   }
@@ -621,7 +633,9 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
     // 🛑 Client-side stop/dismiss check — halts speaking & live mode instantly without API call
     if (SpeechService.isDismissOrStopCommand(query)) {
-      debugPrint('🛑 [AiHelper] Stop command detected ("$query") -> Halting speech & live mode');
+      debugPrint(
+        '🛑 [AiHelper] Stop command detected ("$query") -> Halting speech & live mode',
+      );
       _interruptSpeaking();
       await _speechService.stopListening();
       if (_isLiveMode) {
@@ -637,10 +651,14 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
     _logChatDebug(
       role: 'customer',
-      text: query.isNotEmpty
-          ? query
-          : (imagePath != null ? '[photo] $imagePath' : ''),
-      channel: imagePath != null ? 'text+image' : (_isLiveMode ? 'voice→text' : 'text'),
+      text:
+          query.isNotEmpty
+              ? query
+              : (imagePath != null ? '[photo] $imagePath' : ''),
+      channel:
+          imagePath != null
+              ? 'text+image'
+              : (_isLiveMode ? 'voice→text' : 'text'),
       extra: 'lang=$_selectedLanguage state=$_conversationState',
     );
 
@@ -684,9 +702,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
         final isHi = _selectedLanguage == 'hi';
         final desc = analysis.aiNote.trim();
-        final visionLine = isHi
-            ? '📷 आपकी फ़ोटो देखी। यह ${analysis.category} से जुड़ी समस्या लग रही है।${desc.isNotEmpty ? '\n$desc' : ''}'
-            : '📷 I looked at your photo. This looks like a ${analysis.category} issue.${desc.isNotEmpty ? '\n$desc' : ''}';
+        final visionLine =
+            isHi
+                ? '📷 आपकी फ़ोटो देखी। यह ${analysis.category} से जुड़ी समस्या लग रही है।${desc.isNotEmpty ? '\n$desc' : ''}'
+                : '📷 I looked at your photo. This looks like a ${analysis.category} issue.${desc.isNotEmpty ? '\n$desc' : ''}';
 
         // Seed the detected category so the SAME agent continues its
         // diagnose-first booking flow (it will ask what exactly is wrong).
@@ -730,9 +749,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             AppLocation.instance.requireLat,
           ];
         }
-        final seed = query.isNotEmpty
-            ? query
-            : (desc.isNotEmpty ? desc : 'Issue seen in the photo');
+        final seed =
+            query.isNotEmpty
+                ? query
+                : (desc.isNotEmpty ? desc : 'Issue seen in the photo');
         final res = await _aiRepo.chatWithAgent(
           message: seed,
           conversationState: _conversationState,
@@ -749,7 +769,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           text: res.reply,
           action: res.action,
           channel: 'text+image',
-          extra: 'state=${res.state}'
+          extra:
+              'state=${res.state}'
               '${res.workers.isNotEmpty ? ' workers=${res.workers.length}' : ''}'
               '${res.estimate != null ? ' estimate=${res.estimate}' : ''}',
         );
@@ -771,10 +792,14 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             ),
           );
           _awaitingReply = false;
-          _suggestedReplies = res.suggestedReplies.isNotEmpty
-              ? res.suggestedReplies
-              : _generateFallbackSuggestions(
-                  res.action, res.reply, _selectedLanguage);
+          _suggestedReplies =
+              res.suggestedReplies.isNotEmpty
+                  ? res.suggestedReplies
+                  : _generateFallbackSuggestions(
+                    res.action,
+                    res.reply,
+                    _selectedLanguage,
+                  );
         });
         if (res.action == 'BOOKING_CREATED') {
           _onBookingCreatedFromAi(res.booking);
@@ -805,7 +830,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           text: res.reply,
           action: res.action,
           channel: _isLiveMode ? 'voice→agent' : 'text',
-          extra: 'state=${res.state}'
+          extra:
+              'state=${res.state}'
               '${res.workers.isNotEmpty ? ' workers=${res.workers.length}' : ''}'
               '${res.estimate != null ? ' estimate=${res.estimate}' : ''}'
               ' coords=$coords address="$address"',
@@ -818,9 +844,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           textAppActions,
           booking: res.booking,
         );
-        final displayReply = textAppNote.isNotEmpty
-            ? '${res.reply}\n\n$textAppNote'
-            : res.reply;
+        final displayReply =
+            textAppNote.isNotEmpty ? '${res.reply}\n\n$textAppNote' : res.reply;
 
         // Session Handling
         if (res.action == 'SESSION_EXPIRED') {
@@ -837,7 +862,9 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
         // In Live Mode: play end.mp3 first, hold for 3 seconds, then display and speak response
         if (_isLiveMode) {
-          debugPrint('🔔 live chat reply received → playing end.mp3 cue and waiting 3 seconds');
+          debugPrint(
+            '🔔 live chat reply received → playing end.mp3 cue and waiting 3 seconds',
+          );
           await LiveUiSounds.instance.cueBeforeSpeak();
           await Future.delayed(const Duration(seconds: 3));
           if (!mounted || !_isLiveMode) return;
@@ -862,9 +889,14 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             ),
           );
           _awaitingReply = false;
-          _suggestedReplies = res.suggestedReplies.isNotEmpty
-              ? res.suggestedReplies
-              : _generateFallbackSuggestions(res.action, res.reply, _selectedLanguage);
+          _suggestedReplies =
+              res.suggestedReplies.isNotEmpty
+                  ? res.suggestedReplies
+                  : _generateFallbackSuggestions(
+                    res.action,
+                    res.reply,
+                    _selectedLanguage,
+                  );
         });
 
         if (_isLiveMode) {
@@ -877,31 +909,34 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           );
           setState(() => _liveVoiceState = LiveVoiceState.speaking);
           _setVoiceActivity(0.7);
-          unawaited(_speechService.speak(
-            SpeechService.cleanForSpeechSummary(toSpeak),
-            language: _ttsLocaleId(_selectedLanguage),
-            onComplete: () {
-              if (!mounted || !_isLiveMode) return;
-              _setVoiceActivity(0.0);
-              // Auto-listening: Automatically reactivate mic once AI finishes speaking
-              Future.delayed(const Duration(milliseconds: 300), () {
-                if (mounted &&
-                    _isLiveMode &&
-                    _liveVoiceState != LiveVoiceState.thinking) {
-                  _listenInLiveMode();
-                }
-              });
-            },
-          ));
+          unawaited(
+            _speechService.speak(
+              SpeechService.cleanForSpeechSummary(toSpeak),
+              language: _ttsLocaleId(_selectedLanguage),
+              onComplete: () {
+                if (!mounted || !_isLiveMode) return;
+                _setVoiceActivity(0.0);
+                // Auto-listening: Automatically reactivate mic once AI finishes speaking
+                Future.delayed(const Duration(milliseconds: 300), () {
+                  if (mounted &&
+                      _isLiveMode &&
+                      _liveVoiceState != LiveVoiceState.thinking) {
+                    _listenInLiveMode();
+                  }
+                });
+              },
+            ),
+          );
         } else if (res.action == 'BOOKING_CREATED') {
           _onBookingCreatedFromAi(res.booking);
         }
       }
     } catch (e) {
       if (!mounted) return;
-      final errText = _selectedLanguage == 'hi'
-          ? 'मैं अभी इस अनुरोध को पूरा नहीं कर सका। कृपया पुनः प्रयास करें या नीचे दिए गए विकल्पों में से चुनें।'
-          : 'I could not process that request right now. Please try again or tap one of the suggested options.';
+      final errText =
+          _selectedLanguage == 'hi'
+              ? 'मैं अभी इस अनुरोध को पूरा नहीं कर सका। कृपया पुनः प्रयास करें या नीचे दिए गए विकल्पों में से चुनें।'
+              : 'I could not process that request right now. Please try again or tap one of the suggested options.';
       _logChatDebug(
         role: 'ai',
         text: errText,
@@ -912,26 +947,23 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
       setState(() {
         _messages.removeLast();
         _messages.add(
-          _ChatMessage(
-            isBot: true,
-            text: errText,
-            timestamp: DateTime.now(),
-          ),
+          _ChatMessage(isBot: true, text: errText, timestamp: DateTime.now()),
         );
         _awaitingReply = false;
-        _suggestedReplies = _selectedLanguage == 'hi'
-            ? [
-                'प्लंबर सहायता',
-                'इलेक्ट्रीशियन सहायता',
-                'सफाई सेवा',
-                'मेरी बुकिंग स्थिति',
-              ]
-            : [
-                'Plumbing assistance',
-                'Electrician assistance',
-                'Cleaning services',
-                'Track my orders',
-              ];
+        _suggestedReplies =
+            _selectedLanguage == 'hi'
+                ? [
+                  'प्लंबर सहायता',
+                  'इलेक्ट्रीशियन सहायता',
+                  'सफाई सेवा',
+                  'मेरी बुकिंग स्थिति',
+                ]
+                : [
+                  'Plumbing assistance',
+                  'Electrician assistance',
+                  'Cleaning services',
+                  'Track my orders',
+                ];
       });
 
       if (_isLiveMode) {
@@ -945,42 +977,79 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     _scrollToBottom();
   }
 
-  List<String> _generateFallbackSuggestions(String? action, String reply, String lang) {
+  List<String> _generateFallbackSuggestions(
+    String? action,
+    String reply,
+    String lang,
+  ) {
     final isHi = lang == 'hi';
     final lower = reply.toLowerCase();
     if (action == 'SESSION_EXPIRED') {
       return isHi
-          ? ['नल लीक हो रहा है', 'स्विच में स्पार्क', 'डीप क्लीनिंग', 'बुकिंग स्थिति']
-          : ['Tap leaking in bathroom', 'Switch sparking', 'Deep cleaning', 'Check booking status'];
+          ? [
+            'नल लीक हो रहा है',
+            'स्विच में स्पार्क',
+            'डीप क्लीनिंग',
+            'बुकिंग स्थिति',
+          ]
+          : [
+            'Tap leaking in bathroom',
+            'Switch sparking',
+            'Deep cleaning',
+            'Check booking status',
+          ];
     }
     if (action == 'SESSION_ABORTED') {
       return isHi
           ? ['प्लंबर चाहिए', 'इलेक्ट्रीशियन चाहिए', 'डीप क्लीनिंग', 'मदद']
           : ['Need a plumber', 'Need an electrician', 'Deep cleaning', 'Help'];
     }
-    if (action == 'BOOKING_CREATED' || lower.contains('confirmed') || lower.contains('कन्फर्म')) {
+    if (action == 'BOOKING_CREATED' ||
+        lower.contains('confirmed') ||
+        lower.contains('कन्फर्म')) {
       return isHi
           ? ['बुकिंग ट्रैक करें', 'मेरी बुकिंग्स देखें', 'नई सेवा बुक करें']
-          : ['Track worker arrival', 'View my bookings', 'Book another service'];
+          : [
+            'Track worker arrival',
+            'View my bookings',
+            'Book another service',
+          ];
     }
-    if (action == 'BOOKING_STATUS' || lower.contains('booking #') || lower.contains('स्थिति')) {
+    if (action == 'BOOKING_STATUS' ||
+        lower.contains('booking #') ||
+        lower.contains('स्थिति')) {
       return isHi
           ? ['कार्यकर्ता को कॉल करें', 'ऑर्डर विवरण देखें', 'नई सेवा बुक करें']
           : ['Call worker', 'View order details', 'Book a new service'];
     }
-    if (action == 'CONFIRM_EMERGENCY_BOOKING' || lower.contains('emergency') || lower.contains('sos') || lower.contains('आपातकालीन')) {
+    if (action == 'CONFIRM_EMERGENCY_BOOKING' ||
+        lower.contains('emergency') ||
+        lower.contains('sos') ||
+        lower.contains('आपातकालीन')) {
       return isHi
           ? ['हाँ, तुरंत कार्यकर्ता भेजें', 'विवरण बदलें', 'रद्द करें']
           : ['Yes, dispatch worker now', 'Change details', 'Cancel request'];
     }
-    if (action == 'PROMPT_CONFIRMATION' || lower.contains('confirm') || lower.contains('कन्फर्म')) {
+    if (action == 'PROMPT_CONFIRMATION' ||
+        lower.contains('confirm') ||
+        lower.contains('कन्फर्म')) {
       return isHi
           ? ['हाँ, बुकिंग कन्फर्म करें', 'लागत क्या है?', 'रद्द करें']
           : ['Yes, confirm booking', 'What is the price?', 'Cancel'];
     }
     return isHi
-        ? ['प्लंबर चाहिए', 'इलेक्ट्रीशियन चाहिए', 'डीप क्लीनिंग', 'बुकिंग स्थिति']
-        : ['Need a plumber', 'Need an electrician', 'Deep cleaning', 'Check booking status'];
+        ? [
+          'प्लंबर चाहिए',
+          'इलेक्ट्रीशियन चाहिए',
+          'डीप क्लीनिंग',
+          'बुकिंग स्थिति',
+        ]
+        : [
+          'Need a plumber',
+          'Need an electrician',
+          'Deep cleaning',
+          'Check booking status',
+        ];
   }
 
   // --- Reset Conversation ---
@@ -992,9 +1061,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
       _messages.add(
         _ChatMessage(
           isBot: true,
-          text: _selectedLanguage == 'hi'
-              ? 'बातचीत रीसेट हो गई है। मैं आज आपकी क्या मदद कर सकता हूँ?'
-              : 'Conversation reset. How can I help you today?',
+          text:
+              _selectedLanguage == 'hi'
+                  ? 'बातचीत रीसेट हो गई है। मैं आज आपकी क्या मदद कर सकता हूँ?'
+                  : 'Conversation reset. How can I help you today?',
           timestamp: DateTime.now(),
           action: 'PROMPT_CATEGORY',
         ),
@@ -1063,16 +1133,20 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
         // Protect against rapid double-tap turning mic off immediately after opening
         final now = DateTime.now();
         if (_lastListeningStartedAt != null &&
-            now.difference(_lastListeningStartedAt!) < const Duration(milliseconds: 700)) {
-          debugPrint('🎙️ PTT: rapid double-tap ignored (listening started recently)');
+            now.difference(_lastListeningStartedAt!) <
+                const Duration(milliseconds: 700)) {
+          debugPrint(
+            '🎙️ PTT: rapid double-tap ignored (listening started recently)',
+          );
           return;
         }
 
         // Mic is ON → user taps to stop (or commit what was captured).
         debugPrint('🎙️ PTT: listening → stop mic');
-        final captured = _stripWakeWords(
-          _liveUserDraft.isNotEmpty ? _liveUserDraft : _liveSpokenText,
-        ).trim();
+        final captured =
+            _stripWakeWords(
+              _liveUserDraft.isNotEmpty ? _liveUserDraft : _liveSpokenText,
+            ).trim();
         if (captured.isNotEmpty) {
           // Text was already partially captured — commit it immediately.
           _commitLiveUtterance();
@@ -1130,11 +1204,17 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
   String _stripWakeWords(String text) {
     var cleaned = text.trim();
     cleaned = cleaned.replaceFirst(
-      RegExp(r'^(hey\s+|hi\s+|hello\s+)?(fixly|flexi|fix-ly|fixley|flexy)[,:\s]*', caseSensitive: false),
+      RegExp(
+        r'^(hey\s+|hi\s+|hello\s+)?(fixly|flexi|fix-ly|fixley|flexy)[,:\s]*',
+        caseSensitive: false,
+      ),
       '',
     );
     cleaned = cleaned.replaceFirst(
-      RegExp(r'^(हे\s+|हाय\s+|हेलो\s+)?(फिक्सली|फ्लेक्सी|फिक्स ली)[,:\s]*', caseSensitive: false),
+      RegExp(
+        r'^(हे\s+|हाय\s+|हेलो\s+)?(फिक्सली|फ्लेक्सी|फिक्स ली)[,:\s]*',
+        caseSensitive: false,
+      ),
       '',
     );
     return cleaned.trim();
@@ -1196,7 +1276,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     return raw
         .trim()
         .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s\u0900-\u097F\u0B80-\u0BFF\u0C00-\u0C7F]'), '')
+        .replaceAll(
+          RegExp(r'[^\w\s\u0900-\u097F\u0B80-\u0BFF\u0C00-\u0C7F]'),
+          '',
+        )
         .replaceAll(RegExp(r'\s+'), ' ');
   }
 
@@ -1232,14 +1315,18 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
         (norm == _lastHandledUtteranceNorm ||
             norm.contains(_lastHandledUtteranceNorm!) ||
             _lastHandledUtteranceNorm!.contains(norm))) {
-      debugPrint('⏭️ skip transcript flush — already claimed: "$norm" ~ "$_lastHandledUtteranceNorm"');
+      debugPrint(
+        '⏭️ skip transcript flush — already claimed: "$norm" ~ "$_lastHandledUtteranceNorm"',
+      );
       return;
     }
     if (_messages.isNotEmpty &&
         !_messages.last.isBot &&
         (_messages.last.text.trim() == text ||
             _normUtterance(_messages.last.text) == norm)) {
-      debugPrint('⏭️ skip transcript flush — already matches last user bubble: "$text"');
+      debugPrint(
+        '⏭️ skip transcript flush — already matches last user bubble: "$text"',
+      );
       return;
     }
     setState(() {
@@ -1281,11 +1368,12 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     Map<String, dynamic>? booking,
   }) async {
     if (actions.isEmpty || !mounted) return '';
-    final bookingId = (booking?['_id'] ??
-            booking?['id'] ??
-            booking?['bookingId'] ??
-            _polledBookingId)
-        ?.toString();
+    final bookingId =
+        (booking?['_id'] ??
+                booking?['id'] ??
+                booking?['bookingId'] ??
+                _polledBookingId)
+            ?.toString();
     return executeAiAppActions(
       context,
       actions,
@@ -1303,25 +1391,32 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: actions.map((a) {
-          return FilledButton.tonal(
-            onPressed: () async {
-              final note = await _applyAppActions([a]);
-              if (!mounted) return;
-              if (note.isNotEmpty) {
-                ToastUtils.showToast(context: context, message: note);
-              }
-            },
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(0, 40),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            child: Text(
-              a.buttonLabel,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-          );
-        }).toList(),
+        children:
+            actions.map((a) {
+              return FilledButton.tonal(
+                onPressed: () async {
+                  final note = await _applyAppActions([a]);
+                  if (!mounted) return;
+                  if (note.isNotEmpty) {
+                    ToastUtils.showToast(context: context, message: note);
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 40),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                child: Text(
+                  a.buttonLabel,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              );
+            }).toList(),
       ),
     );
   }
@@ -1337,11 +1432,7 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     }
     setState(() {
       _messages.add(
-        _ChatMessage(
-          isBot: true,
-          text: text,
-          timestamp: DateTime.now(),
-        ),
+        _ChatMessage(isBot: true, text: text, timestamp: DateTime.now()),
       );
     });
     _scrollToBottom();
@@ -1380,9 +1471,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
   /// Prefer backend speakHint; clean bullets/newlines for Live + TTS.
   String _voiceLineFromAgent(AiAgentResponse res, String displayFallback) {
-    final raw = (res.speakHint != null && res.speakHint!.trim().isNotEmpty)
-        ? res.speakHint!
-        : displayFallback;
+    final raw =
+        (res.speakHint != null && res.speakHint!.trim().isNotEmpty)
+            ? res.speakHint!
+            : displayFallback;
     var spoken = SpeechService.cleanForSpeech(raw);
     if (res.action == 'PROMPT_BOOKING_TYPE' &&
         res.suggestedReplies.isNotEmpty) {
@@ -1454,11 +1546,15 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     }
 
     final liveReady =
-        _livePcmActive && _liveBridgeReady && !_liveVoiceFallback && _livePlayer.isReady;
+        _livePcmActive &&
+        _liveBridgeReady &&
+        !_liveVoiceFallback &&
+        _livePlayer.isReady;
 
-    final prompt = _selectedLanguage == 'hi'
-        ? 'अब यूज़र को एक बार, स्वाभाविक और दोस्ताना अंदाज़ में हिंदी में बोलो (रोबोट जैसी आवाज़ नहीं, बुलेट मत पढ़ो): $cleaned'
-        : 'Now speak this once to the user in natural Indian English, warm and human — not robotic, no bullet symbols, no repeating: $cleaned';
+    final prompt =
+        _selectedLanguage == 'hi'
+            ? 'अब यूज़र को एक बार, स्वाभाविक और दोस्ताना अंदाज़ में हिंदी में बोलो (रोबोट जैसी आवाज़ नहीं, बुलेट मत पढ़ो): $cleaned'
+            : 'Now speak this once to the user in natural Indian English, warm and human — not robotic, no bullet symbols, no repeating: $cleaned';
 
     debugPrint(
       '🗣️ _requestSpeech liveReady=$liveReady toolExpect=$expectModelAlreadySpeaking cues=$withOutputCues chars=${cleaned.length}',
@@ -1512,9 +1608,9 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     if (level > _maxVoiceLevel) _maxVoiceLevel = level;
     _maxVoiceLevel = _maxVoiceLevel * 0.995;
     if (_maxVoiceLevel < 1.0) _maxVoiceLevel = 1.0;
-    
+
     double normalized = (level / _maxVoiceLevel).clamp(0.0, 1.0);
-    
+
     if (normalized > _emaVoiceLevel) {
       _emaVoiceLevel = _emaVoiceLevel + 0.6 * (normalized - _emaVoiceLevel);
     } else {
@@ -1535,8 +1631,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
 
     setState(() {
       _liveVoiceState = LiveVoiceState.listening;
-      _liveSpokenText = '';   // Always clear on new session
-      _liveUserDraft = '';    // Clear draft too
+      _liveSpokenText = ''; // Always clear on new session
+      _liveUserDraft = ''; // Clear draft too
     });
     _setVoiceActivity(0.0);
     _lastListeningStartedAt = DateTime.now();
@@ -1606,7 +1702,9 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             // Leftover text from partial — commit it.
             _commitLiveUtterance();
           } else if (_liveVoiceState == LiveVoiceState.listening) {
-            debugPrint('🛑 STT ended without speech → paused. Tap mic to speak.');
+            debugPrint(
+              '🛑 STT ended without speech → paused. Tap mic to speak.',
+            );
             setState(() {
               _liveVoiceState = LiveVoiceState.paused;
               _liveSpokenText = '';
@@ -1627,23 +1725,25 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
       setState(() => _liveVoiceState = LiveVoiceState.speaking);
       _setVoiceActivity(0.70);
     }
-    unawaited(_speechService.speak(
-      cleaned,
-      language: _ttsLocaleId(_selectedLanguage),
-      onComplete: () {
-        if (!mounted) return;
-        if (_isLiveMode) {
-          _setVoiceActivity(0.0);
-          Future.delayed(const Duration(milliseconds: 300), () {
-            if (mounted &&
-                _isLiveMode &&
-                _liveVoiceState != LiveVoiceState.thinking) {
-              _listenInLiveMode();
-            }
-          });
-        }
-      },
-    ));
+    unawaited(
+      _speechService.speak(
+        cleaned,
+        language: _ttsLocaleId(_selectedLanguage),
+        onComplete: () {
+          if (!mounted) return;
+          if (_isLiveMode) {
+            _setVoiceActivity(0.0);
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted &&
+                  _isLiveMode &&
+                  _liveVoiceState != LiveVoiceState.thinking) {
+                _listenInLiveMode();
+              }
+            });
+          }
+        },
+      ),
+    );
   }
 
   void _interruptSpeaking() {
@@ -1689,186 +1789,201 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     }
   }
 
-  // --- Photo Diagnostic Picker ---
-  Future<void> _pickPhotoForAi() async {
-    final picked = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 75,
-    );
-    if (picked == null || !mounted) return;
-    _sendMessage(_queryController.text.trim(), imagePath: picked.path);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       // Keep normal chat background in live mode (no black fill behind orb).
       backgroundColor: null,
-        appBar: AppBar(
-          titleSpacing: 14,
-          elevation: 0,
-          scrolledUnderElevation: 1,
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: _isLiveMode
-                        ? const [Color(0xFF00C7BE), Color(0xFF5856D6), Color(0xFFFF2D55)]
-                        : [
-                            context.scheme.primary,
-                            context.scheme.tertiary,
-                          ],
-                  ),
-                  shape: BoxShape.circle,
+      appBar: AppBar(
+        titleSpacing: 14,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors:
+                      _isLiveMode
+                          ? const [
+                            Color(0xFF00C7BE),
+                            Color(0xFF5856D6),
+                            Color(0xFFFF2D55),
+                          ]
+                          : [context.scheme.primary, context.scheme.tertiary],
                 ),
-                child: Icon(
-                  _isLiveMode ? Icons.graphic_eq_rounded : Icons.auto_awesome,
-                  size: 17,
-                  color: Colors.white,
-                ),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Fixly AI',
+              child: Icon(
+                _isLiveMode ? Icons.graphic_eq_rounded : Icons.auto_awesome,
+                size: 17,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Fixly AI',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_isLiveMode) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF10B981,
+                            ).withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF10B981),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'LIVE',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF10B981),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color:
+                              _isLiveMode
+                                  ? const Color(0xFF00C7BE)
+                                  : const Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          _isLiveMode
+                              ? (_liveVoiceFallback
+                                  ? (_selectedLanguage == 'hi'
+                                      ? 'सुन रहा हूँ…'
+                                      : 'Listening…')
+                                  : (_selectedLanguage == 'hi'
+                                      ? 'बोलिए, मैं सुन रहा हूँ'
+                                      : 'Speak anytime'))
+                              : 'Smart Assistant',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        if (_isLiveMode) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFF10B981), width: 0.8),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.scheme.onSurface.withValues(
+                              alpha: 0.55,
                             ),
-                            child: const Text(
-                              'LIVE',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF10B981),
-                                letterSpacing: 0.5,
-                              ),
-                            ),
+                            fontWeight: FontWeight.w500,
                           ),
-                        ],
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          _buildLanguageTogglePill(),
+          PopupMenuButton<String>(
+            icon: Icon(
+              Icons.more_vert_rounded,
+              color: context.scheme.onSurface.withValues(alpha: 0.7),
+            ),
+            onSelected: (val) {
+              if (val == 'reset') _resetChat();
+              if (val == 'discover')
+                context.push(RouteNames.customerAiDiscovery);
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'reset',
+                    child: Row(
                       children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: _isLiveMode ? const Color(0xFF00C7BE) : const Color(0xFF10B981),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(
-                            _isLiveMode
-                            ? (_liveVoiceFallback
-                                ? (_selectedLanguage == 'hi' ? 'सुन रहा हूँ…' : 'Listening…')
-                                : (_selectedLanguage == 'hi' ? 'बोलिए, मैं सुन रहा हूँ' : 'Speak anytime'))
-                            : 'Smart Assistant',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.scheme.onSurface.withValues(alpha: 0.55),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
+                        Icon(Icons.refresh_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('Restart Session'),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                  const PopupMenuItem(
+                    value: 'discover',
+                    child: Row(
+                      children: [
+                        Icon(Icons.explore_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('Discover Services'),
+                      ],
+                    ),
+                  ),
+                ],
           ),
-          actions: [
-            _buildLanguageTogglePill(),
-            PopupMenuButton<String>(
-              icon: Icon(
-                Icons.more_vert_rounded,
-                color: context.scheme.onSurface.withValues(alpha: 0.7),
-              ),
-              onSelected: (val) {
-                if (val == 'reset') _resetChat();
-                if (val == 'discover') context.push(RouteNames.customerAiDiscovery);
+        ],
+      ),
+      body: Column(
+        children: [
+          // Message List (remains active and visible during live voice talking)
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              itemCount:
+                  _messages.length +
+                  (_isLiveMode &&
+                          _liveVoiceState == LiveVoiceState.listening &&
+                          _liveSpokenText.trim().isNotEmpty
+                      ? 1
+                      : 0),
+              itemBuilder: (context, index) {
+                if (index < _messages.length) {
+                  final msg = _messages[index];
+                  return _buildMessageItem(msg);
+                }
+                // Live partial transcript while user is speaking (type-as-you-go).
+                return _buildLiveSpeechBubble(_liveSpokenText);
               },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'reset',
-                  child: Row(
-                    children: [
-                      Icon(Icons.refresh_rounded, size: 18),
-                      SizedBox(width: 8),
-                      Text('Restart Session'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'discover',
-                  child: Row(
-                    children: [
-                      Icon(Icons.explore_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('Discover Services'),
-                    ],
-                  ),
-                ),
-              ],
             ),
-          ],
-        ),
-        body: Column(
-          children: [
-            // Message List (remains active and visible during live voice talking)
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                itemCount: _messages.length +
-                    (_isLiveMode &&
-                            _liveVoiceState == LiveVoiceState.listening &&
-                            _liveSpokenText.trim().isNotEmpty
-                        ? 1
-                        : 0),
-                itemBuilder: (context, index) {
-                  if (index < _messages.length) {
-                    final msg = _messages[index];
-                    return _buildMessageItem(msg);
-                  }
-                  // Live partial transcript while user is speaking (type-as-you-go).
-                  return _buildLiveSpeechBubble(_liveSpokenText);
-                },
-              ),
-            ),
+          ),
 
-            // Dynamic Suggested Replies Horizontal Bar (hidden in live mode)
-            if (_suggestedReplies.isNotEmpty && !_awaitingReply && !_isLiveMode)
-              _buildSuggestedRepliesBar(),
+          // Dynamic Suggested Replies Horizontal Bar (hidden in live mode)
+          if (_suggestedReplies.isNotEmpty && !_awaitingReply && !_isLiveMode)
+            _buildSuggestedRepliesBar(),
 
-            // Bottom Input Bar (transforms into Siri Wave Bar when _isLiveMode is true)
-            _buildBottomInputBar(),
-          ],
-        ),
-      );
+          // Bottom Input Bar (transforms into Siri Wave Bar when _isLiveMode is true)
+          _buildBottomInputBar(),
+        ],
+      ),
+    );
   }
 
   // --- Multilingual Language Toggle Pill ---
@@ -1876,23 +1991,26 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     return PopupMenuButton<String>(
       tooltip: 'Language',
       onSelected: _switchLanguage,
-      itemBuilder: (context) => LocaleScope.supportedLocales
-          .map(
-            (code) => PopupMenuItem<String>(
-              value: code,
-              child: Text(
-                '${_langLabels[code] ?? code}${_selectedLanguage == code ? '  ✓' : ''}',
-              ),
-            ),
-          )
-          .toList(),
+      itemBuilder:
+          (context) =>
+              LocaleScope.supportedLocales
+                  .map(
+                    (code) => PopupMenuItem<String>(
+                      value: code,
+                      child: Text(
+                        '${_langLabels[code] ?? code}${_selectedLanguage == code ? '  ✓' : ''}',
+                      ),
+                    ),
+                  )
+                  .toList(),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: context.isDark
-              ? context.scheme.surfaceContainerHighest
-              : const Color(0xFFE2E8F0),
+          color:
+              context.isDark
+                  ? context.scheme.surfaceContainerHighest
+                  : const Color(0xFFE2E8F0),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: context.scheme.outlineVariant.withValues(alpha: 0.5),
@@ -1930,10 +2048,7 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
               margin: const EdgeInsets.only(right: 8, top: 2),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    context.scheme.primary,
-                    context.scheme.tertiary,
-                  ],
+                  colors: [context.scheme.primary, context.scheme.tertiary],
                 ),
                 shape: BoxShape.circle,
               ),
@@ -1955,20 +2070,23 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: isBot
-                        ? (context.isDark
-                            ? context.scheme.surfaceContainerHighest
-                            : const Color(0xFFF1F5F9))
-                        : context.scheme.primary,
+                    color:
+                        isBot
+                            ? (context.isDark
+                                ? context.scheme.surfaceContainerHighest
+                                : const Color(0xFFF1F5F9))
+                            : context.scheme.primary,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(18),
                       topRight: const Radius.circular(18),
-                      bottomLeft: isBot
-                          ? const Radius.circular(4)
-                          : const Radius.circular(18),
-                      bottomRight: isBot
-                          ? const Radius.circular(18)
-                          : const Radius.circular(4),
+                      bottomLeft:
+                          isBot
+                              ? const Radius.circular(4)
+                              : const Radius.circular(18),
+                      bottomRight:
+                          isBot
+                              ? const Radius.circular(18)
+                              : const Radius.circular(4),
                     ),
                     boxShadow: [
                       BoxShadow(
@@ -1978,19 +2096,23 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                       ),
                     ],
                   ),
-                  child: msg.loading
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                          child: AiThinkingStatusWidget(
-                            language: _selectedLanguage,
-                            color: context.scheme.primary,
-                          ),
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            !isBot && msg.isNew
-                                ? _TypewriterText(
+                  child:
+                      msg.loading
+                          ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 4,
+                              horizontal: 2,
+                            ),
+                            child: AiThinkingStatusWidget(
+                              language: _selectedLanguage,
+                              color: context.scheme.primary,
+                            ),
+                          )
+                          : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              !isBot && msg.isNew
+                                  ? _TypewriterText(
                                     text: msg.text,
                                     style: const TextStyle(
                                       fontSize: 14.5,
@@ -1998,57 +2120,63 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : Text(
+                                  : Text(
                                     isBot ? _redactPhones(msg.text) : msg.text,
                                     style: TextStyle(
                                       fontSize: 14.5,
                                       height: 1.38,
-                                      color: isBot
-                                          ? context.scheme.onSurface
-                                          : Colors.white,
+                                      color:
+                                          isBot
+                                              ? context.scheme.onSurface
+                                              : Colors.white,
                                     ),
                                   ),
-                            if (isBot) ...[
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  InkWell(
-                                    onTap: () => _speakBotMessageAloud(msg.text),
-                                    child: Icon(
-                                      Icons.volume_up_rounded,
-                                      size: 16,
-                                      color: context.scheme.primary
-                                          .withValues(alpha: 0.75),
+                              if (isBot) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    InkWell(
+                                      onTap:
+                                          () => _speakBotMessageAloud(msg.text),
+                                      child: Icon(
+                                        Icons.volume_up_rounded,
+                                        size: 16,
+                                        color: context.scheme.primary
+                                            .withValues(alpha: 0.75),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  InkWell(
-                                    onTap: () {
-                                      Clipboard.setData(
-                                        ClipboardData(
-                                          text: _redactPhones(msg.text),
-                                        ),
-                                      );
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Copied to clipboard'),
-                                          duration: Duration(seconds: 1),
-                                        ),
-                                      );
-                                    },
-                                    child: Icon(
-                                      Icons.copy_rounded,
-                                      size: 15,
-                                      color: context.scheme.onSurface
-                                          .withValues(alpha: 0.5),
+                                    const SizedBox(width: 10),
+                                    InkWell(
+                                      onTap: () {
+                                        Clipboard.setData(
+                                          ClipboardData(
+                                            text: _redactPhones(msg.text),
+                                          ),
+                                        );
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Copied to clipboard',
+                                            ),
+                                            duration: Duration(seconds: 1),
+                                          ),
+                                        );
+                                      },
+                                      child: Icon(
+                                        Icons.copy_rounded,
+                                        size: 15,
+                                        color: context.scheme.onSurface
+                                            .withValues(alpha: 0.5),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
+                          ),
                 ),
 
                 // Booking Type Selection Quick Action Chips
@@ -2075,7 +2203,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                 // Booking Status Query Card
                 if (msg.bookings.isNotEmpty)
                   _buildBookingListCard(msg.bookings),
-                if (msg.appActions.isNotEmpty) _buildAppActionsCard(msg.appActions),
+                if (msg.appActions.isNotEmpty)
+                  _buildAppActionsCard(msg.appActions),
 
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
@@ -2121,34 +2250,68 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
         runSpacing: 6,
         children: [
           ActionChip(
-            avatar: const Icon(Icons.bolt_rounded, size: 16, color: Color(0xFFEF4444)),
+            avatar: const Icon(
+              Icons.bolt_rounded,
+              size: 16,
+              color: Color(0xFFEF4444),
+            ),
             label: Text(
               isHi ? 'Emergency SOS (तुरंत)' : 'Emergency SOS',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+              ),
             ),
             backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.12),
             side: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
-            onPressed: () => _sendMessage(isHi ? 'आपातकालीन सेवा (Emergency SOS) तुरंत' : 'Emergency SOS urgently needed'),
+            onPressed:
+                () => _sendMessage(
+                  isHi
+                      ? 'आपातकालीन सेवा (Emergency SOS) तुरंत'
+                      : 'Emergency SOS urgently needed',
+                ),
           ),
           ActionChip(
-            avatar: Icon(Icons.schedule_rounded, size: 16, color: context.scheme.primary),
+            avatar: Icon(
+              Icons.schedule_rounded,
+              size: 16,
+              color: context.scheme.primary,
+            ),
             label: Text(
               isHi ? 'Standard (सामान्य)' : 'Standard Booking',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+              ),
             ),
             backgroundColor: context.scheme.primary.withValues(alpha: 0.12),
             side: BorderSide(color: context.scheme.primary, width: 1.2),
-            onPressed: () => _sendMessage(isHi ? 'सामान्य बुकिंग (Standard) कर दो' : 'Standard booking'),
+            onPressed:
+                () => _sendMessage(
+                  isHi ? 'सामान्य बुकिंग (Standard) कर दो' : 'Standard booking',
+                ),
           ),
           ActionChip(
-            avatar: const Icon(Icons.calendar_month_rounded, size: 16, color: Color(0xFF8B5CF6)),
+            avatar: const Icon(
+              Icons.calendar_month_rounded,
+              size: 16,
+              color: Color(0xFF8B5CF6),
+            ),
             label: Text(
               isHi ? 'Schedule (आगे का समय)' : 'Schedule Later',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+              ),
             ),
             backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
             side: const BorderSide(color: Color(0xFF8B5CF6), width: 1.2),
-            onPressed: () => _sendMessage(isHi ? 'बाद के समय के लिए शेड्यूल करें' : 'Schedule for later time'),
+            onPressed:
+                () => _sendMessage(
+                  isHi
+                      ? 'बाद के समय के लिए शेड्यूल करें'
+                      : 'Schedule for later time',
+                ),
           ),
         ],
       ),
@@ -2169,7 +2332,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           final name = w['name']?.toString() ?? 'Verified Worker';
           final rate = w['hourlyRate'] ?? 199;
           final rating = (w['rating'] as num?)?.toDouble();
-          final jobs = (w['ratingCount'] as num?)?.toInt() ??
+          final jobs =
+              (w['ratingCount'] as num?)?.toInt() ??
               (w['totalJobs'] as num?)?.toInt() ??
               0;
           final society = w['society']?.toString() ?? 'Fixly Cooperative';
@@ -2179,9 +2343,15 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             width: 220,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: context.isDark ? context.scheme.surfaceContainerHighest : Colors.white,
+              color:
+                  context.isDark
+                      ? context.scheme.surfaceContainerHighest
+                      : Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.scheme.primary.withValues(alpha: 0.35), width: 1.2),
+              border: Border.all(
+                color: context.scheme.primary.withValues(alpha: 0.35),
+                width: 1.2,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),
@@ -2197,11 +2367,20 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: context.scheme.primary.withValues(alpha: 0.15),
-                      backgroundImage: (avatarUrl != null && avatarUrl.startsWith('http')) ? NetworkImage(avatarUrl) : null,
-                      child: (avatarUrl == null || !avatarUrl.startsWith('http'))
-                          ? Icon(Icons.person, color: context.scheme.primary)
-                          : null,
+                      backgroundColor: context.scheme.primary.withValues(
+                        alpha: 0.15,
+                      ),
+                      backgroundImage:
+                          (avatarUrl != null && avatarUrl.startsWith('http'))
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                      child:
+                          (avatarUrl == null || !avatarUrl.startsWith('http'))
+                              ? Icon(
+                                Icons.person,
+                                color: context.scheme.primary,
+                              )
+                              : null,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -2213,18 +2392,30 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                               Flexible(
                                 child: Text(
                                   name,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13.5,
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               const SizedBox(width: 3),
-                              const Icon(Icons.verified, size: 14, color: Color(0xFF10B981)),
+                              const Icon(
+                                Icons.verified,
+                                size: 14,
+                                color: Color(0xFF10B981),
+                              ),
                             ],
                           ),
                           Text(
                             society,
-                            style: TextStyle(fontSize: 10.5, color: context.scheme.onSurface.withValues(alpha: 0.6)),
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: context.scheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2239,13 +2430,20 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 16,
+                          color: Colors.amber,
+                        ),
                         const SizedBox(width: 2),
                         Text(
                           rating != null && rating > 0
                               ? '${rating.toStringAsFixed(1)}${jobs > 0 ? ' ($jobs)' : ''}'
                               : 'New',
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -2264,14 +2462,25 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   width: double.infinity,
                   height: 34,
                   child: ElevatedButton(
-                    onPressed: () => _sendMessage('Select worker: $name (ID: ${w['_id']})'),
+                    onPressed:
+                        () => _sendMessage(
+                          'Select worker: $name (ID: ${w['_id']})',
+                        ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: context.scheme.primary,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       padding: EdgeInsets.zero,
                     ),
-                    child: const Text('Select Worker', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'Select Worker',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -2298,11 +2507,21 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 18),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: Color(0xFFD97706),
+                size: 18,
+              ),
               const SizedBox(width: 6),
               Text(
-                isHi ? 'कोई ऑनलाइन कार्यकर्ता उपलब्ध नहीं' : 'No Online Workers Available',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF92400E)),
+                isHi
+                    ? 'कोई ऑनलाइन कार्यकर्ता उपलब्ध नहीं'
+                    : 'No Online Workers Available',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: Color(0xFF92400E),
+                ),
               ),
             ],
           ),
@@ -2318,28 +2537,45 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             children: [
               Expanded(
                 child: FilledButton.tonal(
-                  onPressed: () => _sendMessage(isHi ? 'बाद के समय के लिए शेड्यूल करें' : 'Schedule for later'),
+                  onPressed:
+                      () => _sendMessage(
+                        isHi
+                            ? 'बाद के समय के लिए शेड्यूल करें'
+                            : 'Schedule for later',
+                      ),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    backgroundColor: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                    backgroundColor: const Color(
+                      0xFFF59E0B,
+                    ).withValues(alpha: 0.2),
                   ),
                   child: Text(
                     isHi ? 'बाद में शेड्यूल करें' : 'Schedule for Later',
-                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF92400E),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: FilledButton(
-                  onPressed: () => _sendMessage(isHi ? 'अन्य सेवाएं देखें' : 'Try another service'),
+                  onPressed:
+                      () => _sendMessage(
+                        isHi ? 'अन्य सेवाएं देखें' : 'Try another service',
+                      ),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     backgroundColor: const Color(0xFFD97706),
                   ),
                   child: Text(
                     isHi ? 'अन्य सेवाएं' : 'Other Services',
-                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -2351,20 +2587,29 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
   }
 
   // --- Estimate & Cooperative Fair Wage Policy Card ---
-  Widget _buildEstimateAndPolicyCard(Map<String, dynamic> estimate, Map<String, dynamic>? policy) {
+  Widget _buildEstimateAndPolicyCard(
+    Map<String, dynamic> estimate,
+    Map<String, dynamic>? policy,
+  ) {
     final isHi = _selectedLanguage == 'hi';
     final basePrice = estimate['baseServiceFee'] ?? 150;
     final urgentFee = estimate['urgentFee'] ?? 0;
     final platformFee = estimate['platformFee'] ?? 0;
-    final total = estimate['totalAmount'] ?? (basePrice + urgentFee + platformFee);
+    final total =
+        estimate['totalAmount'] ?? (basePrice + urgentFee + platformFee);
 
-    final policyTitle = policy?['title']?.toString() ??
-        (isHi ? 'फिक्सली उचित पारिश्रमिक एवं कल्याण गारंटी' : 'Fixly Cooperative Fair Wage Guarantee');
-    final fairWageNotice = policy?['fairWageNotice']?.toString() ??
+    final policyTitle =
+        policy?['title']?.toString() ??
+        (isHi
+            ? 'फिक्सली उचित पारिश्रमिक एवं कल्याण गारंटी'
+            : 'Fixly Cooperative Fair Wage Guarantee');
+    final fairWageNotice =
+        policy?['fairWageNotice']?.toString() ??
         (isHi
             ? 'सेवा शुल्क का 100% सीधे सहकारी कार्यकर्ता को जाता है।'
             : '100% of the service fee goes directly to the cooperative worker.');
-    final welfareNotice = policy?['welfareFundNotice']?.toString() ??
+    final welfareNotice =
+        policy?['welfareFundNotice']?.toString() ??
         (isHi
             ? 'कार्यकर्ता सामाजिक सुरक्षा और चिकित्सा दुर्घटना कोष में 5% योगदान शामिल।'
             : 'Includes 5% contribution to Worker Social Security & Medical Accident Fund.');
@@ -2373,20 +2618,31 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: context.isDark ? context.scheme.surfaceContainerHighest : const Color(0xFFF8FAFC),
+        color:
+            context.isDark
+                ? context.scheme.surfaceContainerHighest
+                : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.3)),
+        border: Border.all(
+          color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.receipt_long_rounded, color: Color(0xFF3B82F6), size: 18),
+              const Icon(
+                Icons.receipt_long_rounded,
+                color: Color(0xFF3B82F6),
+                size: 18,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  isHi ? 'मूल्य अनुमान एवं पारिश्रमिक विवरण' : 'Price Estimate & Fair Wage Breakdown',
+                  isHi
+                      ? 'मूल्य अनुमान एवं पारिश्रमिक विवरण'
+                      : 'Price Estimate & Fair Wage Breakdown',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
@@ -2406,12 +2662,16 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           ),
           if (urgentFee > 0)
             _buildEstimateRow(
-              isHi ? 'आपातकालीन SOS प्राथमिकता शुल्क' : 'Emergency SOS Priority Surcharge',
+              isHi
+                  ? 'आपातकालीन SOS प्राथमिकता शुल्क'
+                  : 'Emergency SOS Priority Surcharge',
               '+₹$urgentFee',
               isHighlight: true,
             ),
           _buildEstimateRow(
-            isHi ? 'फिक्सली प्लेटफ़ॉर्म शुल्क (0% बिचौलिया)' : 'Fixly Platform Fee (0% Middleman)',
+            isHi
+                ? 'फिक्सली प्लेटफ़ॉर्म शुल्क (0% बिचौलिया)'
+                : 'Fixly Platform Fee (0% Middleman)',
             '₹$platformFee',
             isGreen: true,
           ),
@@ -2421,7 +2681,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
               Expanded(
                 child: Text(
                   isHi ? 'कुल अनुमानित राशि' : 'Total Estimated Amount',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
                   maxLines: 2,
                   softWrap: true,
                 ),
@@ -2443,12 +2706,18 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             decoration: BoxDecoration(
               color: const Color(0xFF10B981).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.25)),
+              border: Border.all(
+                color: const Color(0xFF10B981).withValues(alpha: 0.25),
+              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.shield_rounded, color: Color(0xFF10B981), size: 16),
+                const Icon(
+                  Icons.shield_rounded,
+                  color: Color(0xFF10B981),
+                  size: 16,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Column(
@@ -2456,12 +2725,21 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                     children: [
                       Text(
                         policyTitle,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Color(0xFF065F46)),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11.5,
+                          color: Color(0xFF065F46),
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '$fairWageNotice • $welfareNotice',
-                        style: TextStyle(fontSize: 10.5, color: context.scheme.onSurface.withValues(alpha: 0.75)),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: context.scheme.onSurface.withValues(
+                            alpha: 0.75,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -2489,11 +2767,19 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
               Expanded(
                 flex: 2,
                 child: FilledButton.icon(
-                  onPressed: () => _sendMessage(isHi ? 'हाँ, बुकिंग कन्फर्म करें' : 'Yes, confirm booking'),
+                  onPressed:
+                      () => _sendMessage(
+                        isHi
+                            ? 'हाँ, बुकिंग कन्फर्म करें'
+                            : 'Yes, confirm booking',
+                      ),
                   icon: const Icon(Icons.check, size: 16),
                   label: Text(
                     isHi ? 'बुकिंग कन्फर्म करें' : 'Confirm Booking',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2508,7 +2794,12 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
     );
   }
 
-  Widget _buildEstimateRow(String label, String value, {bool isHighlight = false, bool isGreen = false}) {
+  Widget _buildEstimateRow(
+    String label,
+    String value, {
+    bool isHighlight = false,
+    bool isGreen = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.5),
       child: Row(
@@ -2531,9 +2822,12 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: isHighlight
-                  ? const Color(0xFFDC2626)
-                  : (isGreen ? const Color(0xFF059669) : context.scheme.onSurface),
+              color:
+                  isHighlight
+                      ? const Color(0xFFDC2626)
+                      : (isGreen
+                          ? const Color(0xFF059669)
+                          : context.scheme.onSurface),
             ),
           ),
         ],
@@ -2544,10 +2838,14 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
   // --- Booking Created Rich Card ---
   Widget _buildBookingCreatedCard(Map<String, dynamic> booking) {
     final bookingId =
-        (booking['bookingId'] ?? booking['_id'] ?? booking['id'] ?? '#BK-CONFIRMED')
+        (booking['bookingId'] ??
+                booking['_id'] ??
+                booking['id'] ??
+                '#BK-CONFIRMED')
             .toString();
     final totalAmount = booking['invoice']?['totalAmount'] ?? 200;
-    final isThisPolled = _polledBookingId != null &&
+    final isThisPolled =
+        _polledBookingId != null &&
         (_polledBookingId == bookingId ||
             _polledBookingId == booking['_id']?.toString() ||
             _polledBookingId == booking['id']?.toString());
@@ -2573,9 +2871,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                 accepted
                     ? Icons.check_circle_rounded
                     : Icons.hourglass_top_rounded,
-                color: accepted
-                    ? const Color(0xFF10B981)
-                    : context.scheme.primary,
+                color:
+                    accepted ? const Color(0xFF10B981) : context.scheme.primary,
                 size: 18,
               ),
               const SizedBox(width: 6),
@@ -2587,9 +2884,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
-                    color: accepted
-                        ? const Color(0xFF10B981)
-                        : context.scheme.primary,
+                    color:
+                        accepted
+                            ? const Color(0xFF10B981)
+                            : context.scheme.primary,
                   ),
                 ),
               ),
@@ -2600,8 +2898,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             accepted
                 ? 'Estimated Fee: ₹$totalAmount • ${_acceptedWorkerName ?? 'Worker'} is on the way soon.'
                 : waiting
-                    ? 'Estimated Fee: ₹$totalAmount • Waiting for a worker to accept…'
-                    : 'Estimated Fee: ₹$totalAmount • Verified worker will be assigned shortly.',
+                ? 'Estimated Fee: ₹$totalAmount • Waiting for a worker to accept…'
+                : 'Estimated Fee: ₹$totalAmount • Verified worker will be assigned shortly.',
             style: TextStyle(
               fontSize: 12,
               color: context.scheme.onSurface.withValues(alpha: 0.8),
@@ -2643,22 +2941,27 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   onPressed: () {
                     // Switch bottom-nav Bookings tab (index 3), don't push overlay.
                     if (context.canPop() &&
-                        GoRouterState.of(context)
-                            .uri
-                            .path
-                            .contains('ai-chat')) {
+                        GoRouterState.of(
+                          context,
+                        ).uri.path.contains('ai-chat')) {
                       context.pop();
                     }
                     context.goCustomerTab(3);
                   },
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                    backgroundColor:
-                        const Color(0xFF10B981).withValues(alpha: 0.18),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 8,
+                    ),
+                    backgroundColor: const Color(
+                      0xFF10B981,
+                    ).withValues(alpha: 0.18),
                   ),
                   child: Text(
-                    _selectedLanguage == 'hi' ? 'बुकिंग्स देखें' : 'Go to Bookings',
+                    _selectedLanguage == 'hi'
+                        ? 'बुकिंग्स देखें'
+                        : 'Go to Bookings',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2710,7 +3013,8 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
   // --- Booking List Rich Card ---
   Widget _buildBookingListCard(List<dynamic> bookings) {
     final latest = bookings.first as Map<String, dynamic>;
-    final bookingId = latest['bookingId'] ?? latest['_id'] ?? latest['id'] ?? '#BK';
+    final bookingId =
+        latest['bookingId'] ?? latest['_id'] ?? latest['id'] ?? '#BK';
     final mongoId = (latest['_id'] ?? latest['id'] ?? bookingId).toString();
     final status = latest['status'] ?? 'PENDING';
     final worker = latest['worker'] as Map<String, dynamic>?;
@@ -2735,7 +3039,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
               Expanded(
                 child: Text(
                   'Order $bookingId',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2743,7 +3050,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: context.scheme.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
@@ -2776,12 +3086,17 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             const SizedBox(height: 6),
             // Privacy: never show real phone — in-app WebRTC only.
             TextButton.icon(
-              onPressed: () => _callWorkerViaWebRtc(
-                bookingId: mongoId,
-                workerName: workerName,
-                workerAvatar: workerAvatar,
+              onPressed:
+                  () => _callWorkerViaWebRtc(
+                    bookingId: mongoId,
+                    workerName: workerName,
+                    workerAvatar: workerAvatar,
+                  ),
+              icon: Icon(
+                Icons.videocam_rounded,
+                size: 16,
+                color: context.scheme.primary,
               ),
-              icon: Icon(Icons.videocam_rounded, size: 16, color: context.scheme.primary),
               label: Text(
                 _selectedLanguage == 'hi' ? 'ऐप से कॉल करें' : 'Call via Fixly',
                 style: TextStyle(
@@ -2816,9 +3131,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
           final reply = _suggestedReplies[index];
           return ActionChip(
             onPressed: () => _sendMessage(reply),
-            backgroundColor: context.isDark
-                ? context.scheme.surfaceContainerHighest
-                : Colors.white,
+            backgroundColor:
+                context.isDark
+                    ? context.scheme.surfaceContainerHighest
+                    : Colors.white,
             elevation: 1,
             shadowColor: Colors.black12,
             shape: RoundedRectangleBorder(
@@ -2874,37 +3190,21 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
         top: false,
         child: Row(
           children: [
-            // Photo Diagnostic Button
-            IconButton(
-              onPressed: _pickPhotoForAi,
-              tooltip: 'Attach Issue Photo',
-              icon: Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: context.isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.black.withValues(alpha: 0.04),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.add_photo_alternate_rounded,
-                  color: context.scheme.onSurface.withValues(alpha: 0.70),
-                  size: 19,
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-
             // Text Input Field
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: context.isDark
-                      ? context.scheme.surfaceContainerHighest.withValues(alpha: 0.6)
-                      : const Color(0xFFF1F5F9),
+                  color:
+                      context.isDark
+                          ? context.scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.6,
+                          )
+                          : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: context.scheme.outlineVariant.withValues(alpha: 0.25),
+                    color: context.scheme.outlineVariant.withValues(
+                      alpha: 0.25,
+                    ),
                     width: 0.8,
                   ),
                 ),
@@ -2916,11 +3216,14 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   onSubmitted: (val) => _sendMessage(val),
                   onChanged: (text) => setState(() {}),
                   decoration: InputDecoration(
-                    hintText: _isDictating
-                        ? (_selectedLanguage == 'hi' ? 'सुन रहा हूँ...' : 'Listening...')
-                        : (_selectedLanguage == 'hi'
-                            ? 'समस्या लिखें या पूछें...'
-                            : 'Ask Fixly or describe issue...'),
+                    hintText:
+                        _isDictating
+                            ? (_selectedLanguage == 'hi'
+                                ? 'सुन रहा हूँ...'
+                                : 'Listening...')
+                            : (_selectedLanguage == 'hi'
+                                ? 'समस्या लिखें या पूछें...'
+                                : 'Ask Fixly or describe issue...'),
                     hintStyle: TextStyle(
                       fontSize: 13.5,
                       color: context.scheme.onSurface.withValues(alpha: 0.45),
@@ -2930,19 +3233,19 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                       vertical: 10,
                     ),
                     border: InputBorder.none,
-                    suffixIcon: IconButton(
-                      onPressed: _toggleDictation,
-                      tooltip: 'Dictate speech',
-                      icon: Icon(
-                        _isDictating
-                            ? Icons.mic_rounded
-                            : Icons.mic_none_rounded,
-                        color: _isDictating
-                            ? Colors.redAccent
-                            : context.scheme.onSurface.withValues(alpha: 0.55),
-                        size: 20,
-                      ),
-                    ),
+                    // suffixIcon: IconButton(
+                    //   onPressed: _toggleDictation,
+                    //   tooltip: 'Dictate speech',
+                    //   icon: Icon(
+                    //     _isDictating
+                    //         ? Icons.mic_rounded
+                    //         : Icons.mic_none_rounded,
+                    //     color: _isDictating
+                    //         ? Colors.redAccent
+                    //         : context.scheme.onSurface.withValues(alpha: 0.55),
+                    //     size: 20,
+                    //   ),
+                    // ),
                   ),
                 ),
               ),
@@ -2957,9 +3260,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                 elevation: 2,
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: _awaitingReply
-                      ? null
-                      : () => _sendMessage(_queryController.text),
+                  onTap:
+                      _awaitingReply
+                          ? null
+                          : () => _sendMessage(_queryController.text),
                   child: const Padding(
                     padding: EdgeInsets.all(11),
                     child: Icon(
@@ -2978,7 +3282,10 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   onTap: _onVoiceButtonTap,
                   borderRadius: BorderRadius.circular(24),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 9,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [
@@ -2990,7 +3297,9 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF5856D6).withValues(alpha: 0.35),
+                          color: const Color(
+                            0xFF5856D6,
+                          ).withValues(alpha: 0.35),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -3063,19 +3372,20 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
             // TEMP test orb (GIF loop). Delete FixlyLiveOrb + restore SiriORB later.
             ValueListenableBuilder<double>(
               valueListenable: _voiceActivityNotifier,
-              builder: (_, activity, child) => FixlyLiveOrb(
-                size: 92,
-                voiceActivity: activity,
-                onTap: () async {
-                  if (_liveVoiceState == LiveVoiceState.speaking) {
-                    // Barge-in: user wants to interrupt AI speech.
-                    _interruptSpeaking();
-                  } else {
-                    // All other states handled by PTT handler.
-                    await _onVoiceButtonTap();
-                  }
-                },
-              ),
+              builder:
+                  (_, activity, child) => FixlyLiveOrb(
+                    size: 92,
+                    voiceActivity: activity,
+                    onTap: () async {
+                      if (_liveVoiceState == LiveVoiceState.speaking) {
+                        // Barge-in: user wants to interrupt AI speech.
+                        _interruptSpeaking();
+                      } else {
+                        // All other states handled by PTT handler.
+                        await _onVoiceButtonTap();
+                      }
+                    },
+                  ),
             ),
 
             // End Live Mode Button
@@ -3083,7 +3393,9 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
               onPressed: _closeLiveMode,
               tooltip: 'End Live Talk',
               style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                backgroundColor: const Color(
+                  0xFFEF4444,
+                ).withValues(alpha: 0.12),
                 padding: const EdgeInsets.all(12),
               ),
               icon: const Icon(
@@ -3114,13 +3426,13 @@ class _CustomerAiHelperPageState extends State<CustomerAiHelperPage> {
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.sizeOf(context).width * 0.78,
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [
-                        context.scheme.primary,
-                        const Color(0xFF6366F1),
-                      ],
+                      colors: [context.scheme.primary, const Color(0xFF6366F1)],
                     ),
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(18),

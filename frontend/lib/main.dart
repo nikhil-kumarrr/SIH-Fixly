@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import 'app/app.dart';
+import 'core/binding/fixly_widgets_binding.dart';
 import 'core/config/feature_flag.dart';
 import 'core/firebase/firebase_bootstrap.dart';
 import 'core/network/api_client.dart';
@@ -11,7 +12,7 @@ import 'core/services/mock_worker_simulator_service.dart';
 import 'core/utils/app_package_info.dart';
 
 Future<void> main() async {
-  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = FixlyWidgetsBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   await AppPreferences.instance.init();
   await AppPackageInfo.ensureInitialized();

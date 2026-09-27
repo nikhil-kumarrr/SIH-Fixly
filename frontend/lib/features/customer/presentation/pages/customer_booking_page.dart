@@ -1057,10 +1057,11 @@ class _CustomerBookingPageState extends State<CustomerBookingPage> {
 
     return AppScaffold(
       title: context.l10n.bookService,
+      padding: EdgeInsets.zero,
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 32),
           children: [
             // 1. Step Progress Header
             if (selectedService != null)

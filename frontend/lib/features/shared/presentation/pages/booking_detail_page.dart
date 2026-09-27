@@ -124,7 +124,8 @@ class _BookingDetailPageState extends State<BookingDetailPage>
         forceNetwork: true,
       );
       if (!mounted) return;
-      final changed = updated.status != current.status ||
+      final changed =
+          updated.status != current.status ||
           updated.rawStatus != current.rawStatus ||
           updated.workerHasStartedNavigation !=
               current.workerHasStartedNavigation ||
@@ -183,15 +184,17 @@ class _BookingDetailPageState extends State<BookingDetailPage>
       }
       WorkerRealtimeService.instance.trackBooking(booking.id);
 
-      _statusSub =
-          WorkerRealtimeService.instance.bookingStatusStream.listen((map) {
+      _statusSub = WorkerRealtimeService.instance.bookingStatusStream.listen((
+        map,
+      ) {
         if (_booking == null || !_eventMatches(map, _booking!)) return;
         unawaited(_refreshBooking());
       });
 
       _startPoll();
-      _connSub =
-          WorkerRealtimeService.instance.connectionStream.listen((connected) {
+      _connSub = WorkerRealtimeService.instance.connectionStream.listen((
+        connected,
+      ) {
         if (!mounted || _booking == null) return;
         if (connected) {
           WorkerRealtimeService.instance.trackBooking(_booking!.id);
@@ -208,16 +211,18 @@ class _BookingDetailPageState extends State<BookingDetailPage>
     CustomerRealtimeService.instance.trackBooking(booking.id);
 
     // Socket → instant full-screen refresh
-    _statusSub =
-        CustomerRealtimeService.instance.bookingStatusStream.listen((map) {
+    _statusSub = CustomerRealtimeService.instance.bookingStatusStream.listen((
+      map,
+    ) {
       if (_booking == null || !_eventMatches(map, _booking!)) return;
       unawaited(_refreshBooking());
     });
 
     // Poll every 5s as backup when socket down / silent
     _startPoll();
-    _connSub =
-        CustomerRealtimeService.instance.connectionStream.listen((connected) {
+    _connSub = CustomerRealtimeService.instance.connectionStream.listen((
+      connected,
+    ) {
       if (!mounted || _booking == null) return;
       if (connected) {
         CustomerRealtimeService.instance.trackBooking(_booking!.id);
@@ -236,30 +241,26 @@ class _BookingDetailPageState extends State<BookingDetailPage>
       title: 'Booking Details',
       padding: EdgeInsets.zero,
       showBack: true,
-      body: _loading && _booking == null
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null && _booking == null
+      body:
+          _loading && _booking == null
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null && _booking == null
               ? _ErrorState(onRetry: _retry)
-              : _BookingDetails(
-                  booking: _booking!,
-                  onRefresh: _refreshBooking,
-                ),
+              : _BookingDetails(booking: _booking!, onRefresh: _refreshBooking),
     );
   }
 }
 
 class _BookingDetails extends StatelessWidget {
-  const _BookingDetails({
-    required this.booking,
-    this.onRefresh,
-  });
+  const _BookingDetails({required this.booking, this.onRefresh});
 
   final Booking booking;
   final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
-    final role = context.watch<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
+    final role =
+        context.watch<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
     final isWorker = role == UserRole.worker;
 
     return RefreshIndicator(
@@ -298,7 +299,10 @@ class _BookingDetails extends StatelessWidget {
               icon: const Icon(Icons.sos_rounded, color: Colors.red),
               label: const Text(
                 'Trigger in-job SOS alert',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.red),
@@ -328,7 +332,8 @@ class _BookingDetails extends StatelessWidget {
           const SizedBox(height: 16),
 
           // 5. Uploaded Media Evidence (Big 2-column Grid with full-screen tap)
-          if (booking.problemPhotos.isNotEmpty || booking.problemVideos.isNotEmpty) ...[
+          if (booking.problemPhotos.isNotEmpty ||
+              booking.problemVideos.isNotEmpty) ...[
             _UploadedMediaGridCard(booking: booking),
             const SizedBox(height: 16),
           ],
@@ -353,10 +358,7 @@ class _BookingDetails extends StatelessWidget {
 // 1. Hero Header Card
 // ---------------------------------------------------------------------------
 class _HeroHeaderCard extends StatelessWidget {
-  const _HeroHeaderCard({
-    required this.booking,
-    required this.isWorker,
-  });
+  const _HeroHeaderCard({required this.booking, required this.isWorker});
 
   final Booking booking;
   final bool isWorker;
@@ -364,31 +366,34 @@ class _HeroHeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final status = booking.cancelledByWorker && !isWorker
-        ? const _StatusBadgeConfig(
-            label: 'Cancelled by Worker',
-            color: Color(0xFFDC2626),
-            bgColor: Color(0xFFFEE2E2),
-            icon: Icons.cancel_rounded,
-          )
-        : booking.needsReview(isWorker: isWorker)
+    final status =
+        booking.cancelledByWorker && !isWorker
             ? const _StatusBadgeConfig(
-                label: 'Review Pending',
-                color: Color(0xFFD97706),
-                bgColor: Color(0xFFFEF3C7),
-                icon: Icons.rate_review_rounded,
-              )
+              label: 'Cancelled by Worker',
+              color: Color(0xFFDC2626),
+              bgColor: Color(0xFFFEE2E2),
+              icon: Icons.cancel_rounded,
+            )
+            : booking.needsReview(isWorker: isWorker)
+            ? const _StatusBadgeConfig(
+              label: 'Review Pending',
+              color: Color(0xFFD97706),
+              bgColor: Color(0xFFFEF3C7),
+              icon: Icons.rate_review_rounded,
+            )
             : _getStatusBadge(
-                booking.status,
-                isWorker: isWorker,
-                rawStatus: booking.rawStatus,
-                paymentStatus: booking.paymentStatus,
-              );
+              booking.status,
+              isWorker: isWorker,
+              rawStatus: booking.rawStatus,
+              paymentStatus: booking.paymentStatus,
+            );
     final catColor = _categoryColor(booking.serviceCategory);
     final catIcon = _categoryIcon(booking.serviceCategory);
     final catLabel = () {
-      final localized =
-          localizeCategory(booking.serviceCategory, context.l10n.locale);
+      final localized = localizeCategory(
+        booking.serviceCategory,
+        context.l10n.locale,
+      );
       return localized.isNotEmpty ? localized : 'Service';
     }();
     final scheduled = booking.scheduledAt;
@@ -418,21 +423,22 @@ class _HeroHeaderCard extends StatelessWidget {
               children: [
                 Image.network(
                   booking.serviceImage!,
-                  height: 150,
                   width: double.infinity,
-                  fit: BoxFit.cover,
+
+                  fit: BoxFit.contain,
                   errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
-                Container(
-                  height: 150,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.1),
-                        Colors.black.withValues(alpha: 0.6),
-                      ],
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.1),
+                          Colors.black.withValues(alpha: 0.6),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -443,7 +449,10 @@ class _HeroHeaderCard extends StatelessWidget {
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: catColor,
                           borderRadius: BorderRadius.circular(20),
@@ -478,11 +487,15 @@ class _HeroHeaderCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Top row if no service image banner
-                if (booking.serviceImage == null || booking.serviceImage!.isEmpty) ...[
+                if (booking.serviceImage == null ||
+                    booking.serviceImage!.isEmpty) ...[
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: catColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
@@ -539,7 +552,9 @@ class _HeroHeaderCard extends StatelessWidget {
                     const SizedBox(width: 6),
                     GestureDetector(
                       onTap: () {
-                        Clipboard.setData(ClipboardData(text: booking.displayId ?? booking.id));
+                        Clipboard.setData(
+                          ClipboardData(text: booking.displayId ?? booking.id),
+                        );
                         ToastUtils.showToast(
                           context: context,
                           message: 'Booking ID copied to clipboard',
@@ -615,10 +630,7 @@ class _HeroHeaderCard extends StatelessWidget {
 // 2. Role Adaptive Party Card (Who's Working / Customer Site)
 // ---------------------------------------------------------------------------
 class _RoleAdaptivePartyCard extends StatelessWidget {
-  const _RoleAdaptivePartyCard({
-    required this.booking,
-    required this.isWorker,
-  });
+  const _RoleAdaptivePartyCard({required this.booking, required this.isWorker});
 
   final Booking booking;
   final bool isWorker;
@@ -626,7 +638,10 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
   Future<void> _callCustomerViaWebRtc(BuildContext context) async {
     final bookingId = booking.id;
     if (bookingId.isEmpty) {
-      ToastUtils.showToast(context: context, message: 'Booking ID not available');
+      ToastUtils.showToast(
+        context: context,
+        message: 'Booking ID not available',
+      );
       return;
     }
     final peerName = booking.customerName ?? 'Customer';
@@ -661,7 +676,10 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
   Future<void> _callWorkerViaWebRtc(BuildContext context) async {
     final bookingId = booking.id;
     if (bookingId.isEmpty) {
-      ToastUtils.showToast(context: context, message: 'Booking ID not available');
+      ToastUtils.showToast(
+        context: context,
+        message: 'Booking ID not available',
+      );
       return;
     }
     final peerName = booking.workerName ?? 'Worker';
@@ -716,7 +734,10 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
     }
 
     if (context.mounted) {
-      ToastUtils.showToast(context: context, message: 'Address location unavailable');
+      ToastUtils.showToast(
+        context: context,
+        message: 'Address location unavailable',
+      );
     }
   }
 
@@ -747,7 +768,11 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.person_pin_rounded, size: 20, color: AppColors.primary),
+                const Icon(
+                  Icons.person_pin_rounded,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Customer & Service Site',
@@ -798,20 +823,23 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                   ),
                 ),
                 ElevatedButton.icon(
-                    onPressed: () => _callCustomerViaWebRtc(context),
-                    icon: const Icon(Icons.call_rounded, size: 16),
-                    label: const Text('Call'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF059669),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                  onPressed: () => _callCustomerViaWebRtc(context),
+                  icon: const Icon(Icons.call_rounded, size: 16),
+                  label: const Text('Call'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF059669),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
+                ),
               ],
             ),
 
@@ -857,7 +885,10 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
                       side: const BorderSide(color: AppColors.primary),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(
@@ -874,7 +905,8 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
     }
 
     // Customer view: Show Assigned Professional or Matching Radar
-    final hasWorker = booking.workerName != null && booking.workerName!.isNotEmpty;
+    final hasWorker =
+        booking.workerName != null && booking.workerName!.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -897,7 +929,11 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.handyman_rounded, size: 20, color: AppColors.primary),
+              const Icon(
+                Icons.handyman_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Service Professional',
@@ -918,12 +954,25 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                     width: 48,
                     height: 48,
                     color: AppColors.primary.withValues(alpha: 0.1),
-                    child: booking.workerAvatar != null &&
-                            booking.workerAvatar!.isNotEmpty
-                        ? Image.network(
-                            booking.workerAvatar!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Center(
+                    child:
+                        booking.workerAvatar != null &&
+                                booking.workerAvatar!.isNotEmpty
+                            ? Image.network(
+                              booking.workerAvatar!,
+                              fit: BoxFit.cover,
+                              errorBuilder:
+                                  (_, _, _) => Center(
+                                    child: Text(
+                                      booking.workerName![0].toUpperCase(),
+                                      style: const TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 20,
+                                      ),
+                                    ),
+                                  ),
+                            )
+                            : Center(
                               child: Text(
                                 booking.workerName![0].toUpperCase(),
                                 style: const TextStyle(
@@ -933,17 +982,6 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          )
-                        : Center(
-                            child: Text(
-                              booking.workerName![0].toUpperCase(),
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 20,
-                              ),
-                            ),
-                          ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -989,7 +1027,11 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.star_rounded, size: 12, color: Color(0xFFD97706)),
+                                const Icon(
+                                  Icons.star_rounded,
+                                  size: 12,
+                                  color: Color(0xFFD97706),
+                                ),
                                 const SizedBox(width: 2),
                                 Text(
                                   formatRating(booking.workerRating),
@@ -1022,7 +1064,10 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF059669),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     minimumSize: const Size(44, 44),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     shape: RoundedRectangleBorder(
@@ -1074,7 +1119,9 @@ class _RoleAdaptivePartyCard extends StatelessWidget {
                           'Available workers are reviewing your request. You\'ll receive an instant update.',
                           style: TextStyle(
                             fontSize: 11,
-                            color: const Color(0xFF92400E).withValues(alpha: 0.8),
+                            color: const Color(
+                              0xFF92400E,
+                            ).withValues(alpha: 0.8),
                           ),
                         ),
                       ],
@@ -1219,27 +1266,28 @@ class _ArrivalOtpCard extends StatelessWidget {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: otp.split('').map((char) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
-                  width: 38,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    char,
-                    style: const TextStyle(
-                      color: Color(0xFF1E3A8A),
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                );
-              }).toList(),
+              children:
+                  otp.split('').map((char) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      width: 38,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        char,
+                        style: const TextStyle(
+                          color: Color(0xFF1E3A8A),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    );
+                  }).toList(),
             ),
           ),
         ],
@@ -1259,7 +1307,8 @@ class _JobScopeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasDesc = booking.problemDescription != null &&
+    final hasDesc =
+        booking.problemDescription != null &&
         booking.problemDescription!.trim().isNotEmpty;
     final hasIncluded = booking.whatsIncluded.isNotEmpty;
     final hasParts = booking.addOns.isNotEmpty;
@@ -1285,7 +1334,11 @@ class _JobScopeCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.assignment_outlined, size: 20, color: AppColors.primary),
+              const Icon(
+                Icons.assignment_outlined,
+                size: 20,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Job Scope & Description',
@@ -1303,7 +1356,9 @@ class _JobScopeCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.4,
+                ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border(
                   left: BorderSide(
@@ -1392,9 +1447,14 @@ class _JobScopeCard extends StatelessWidget {
             for (final part in booking.addOns)
               Container(
                 margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -1459,7 +1519,11 @@ class _UploadedMediaGridCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.perm_media_rounded, size: 20, color: AppColors.primary),
+              const Icon(
+                Icons.perm_media_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1474,9 +1538,7 @@ class _UploadedMediaGridCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'Tap any item to preview in full screen',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.hintColor,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
           ),
           const SizedBox(height: 14),
 
@@ -1503,10 +1565,11 @@ class _UploadedMediaGridCard extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => _FullScreenImageViewer(
-                          imageUrl: photoUrl,
-                          title: 'Photo $photoIndex of ${photos.length}',
-                        ),
+                        builder:
+                            (_) => _FullScreenImageViewer(
+                              imageUrl: photoUrl,
+                              title: 'Photo $photoIndex of ${photos.length}',
+                            ),
                       ),
                     );
                   },
@@ -1522,10 +1585,11 @@ class _UploadedMediaGridCard extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => _FullScreenVideoPlayer(
-                          videoUrl: videoUrl,
-                          title: 'Video $displayIndex of ${videos.length}',
-                        ),
+                        builder:
+                            (_) => _FullScreenVideoPlayer(
+                              videoUrl: videoUrl,
+                              title: 'Video $displayIndex of ${videos.length}',
+                            ),
                       ),
                     );
                   },
@@ -1558,7 +1622,9 @@ class _PhotoGridItem extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6),
+            color: Theme.of(
+              context,
+            ).colorScheme.outlineVariant.withValues(alpha: 0.6),
           ),
           boxShadow: [
             BoxShadow(
@@ -1591,7 +1657,11 @@ class _PhotoGridItem extends StatelessWidget {
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.photo_camera_rounded, size: 12, color: Colors.white),
+                    Icon(
+                      Icons.photo_camera_rounded,
+                      size: 12,
+                      color: Colors.white,
+                    ),
                     SizedBox(width: 4),
                     Text(
                       'Photo',
@@ -1602,7 +1672,11 @@ class _PhotoGridItem extends StatelessWidget {
                       ),
                     ),
                     Spacer(),
-                    Icon(Icons.zoom_in_rounded, size: 14, color: Colors.white70),
+                    Icon(
+                      Icons.zoom_in_rounded,
+                      size: 14,
+                      color: Colors.white70,
+                    ),
                   ],
                 ),
               ),
@@ -1633,9 +1707,7 @@ class _VideoGridItem extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: const Color(0xFF334155),
-          ),
+          border: Border.all(color: const Color(0xFF334155)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -1716,10 +1788,7 @@ class _VideoGridItem extends StatelessWidget {
                     Spacer(),
                     Text(
                       'Tap to play',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                      ),
+                      style: TextStyle(color: Colors.white70, fontSize: 10),
                     ),
                   ],
                 ),
@@ -1741,18 +1810,28 @@ Widget _buildMediaImage(String pathOrUrl, {BoxFit fit = BoxFit.cover}) {
         if (progress == null) return child;
         return const Center(child: CircularProgressIndicator(strokeWidth: 2));
       },
-      errorBuilder: (_, _, _) => const Center(
-        child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 36),
-      ),
+      errorBuilder:
+          (_, _, _) => const Center(
+            child: Icon(
+              Icons.broken_image_rounded,
+              color: Colors.grey,
+              size: 36,
+            ),
+          ),
     );
   } else {
     final file = File(pathOrUrl);
     return Image.file(
       file,
       fit: fit,
-      errorBuilder: (_, _, _) => const Center(
-        child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 36),
-      ),
+      errorBuilder:
+          (_, _, _) => const Center(
+            child: Icon(
+              Icons.broken_image_rounded,
+              color: Colors.grey,
+              size: 36,
+            ),
+          ),
     );
   }
 }
@@ -1761,10 +1840,7 @@ Widget _buildMediaImage(String pathOrUrl, {BoxFit fit = BoxFit.cover}) {
 // Fullscreen Image Viewer
 // ---------------------------------------------------------------------------
 class _FullScreenImageViewer extends StatelessWidget {
-  const _FullScreenImageViewer({
-    required this.imageUrl,
-    required this.title,
-  });
+  const _FullScreenImageViewer({required this.imageUrl, required this.title});
 
   final String imageUrl;
   final String title;
@@ -1827,10 +1903,7 @@ class _FullScreenImageViewer extends StatelessWidget {
 // Fullscreen Interactive Video Player
 // ---------------------------------------------------------------------------
 class _FullScreenVideoPlayer extends StatefulWidget {
-  const _FullScreenVideoPlayer({
-    required this.videoUrl,
-    required this.title,
-  });
+  const _FullScreenVideoPlayer({required this.videoUrl, required this.title});
 
   final String videoUrl;
   final String title;
@@ -1856,12 +1929,15 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
 
   Future<void> _initPlayer() async {
     try {
-      final isNetwork = widget.videoUrl.startsWith('http://') ||
+      final isNetwork =
+          widget.videoUrl.startsWith('http://') ||
           widget.videoUrl.startsWith('https://');
       VideoPlayerController controller;
 
       if (isNetwork) {
-        controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+        controller = VideoPlayerController.networkUrl(
+          Uri.parse(widget.videoUrl),
+        );
       } else {
         final file = File(widget.videoUrl);
         if (!await file.exists()) {
@@ -1975,7 +2051,9 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
         actions: [
           if (_isInitialized)
             IconButton(
-              icon: Icon(_isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded),
+              icon: Icon(
+                _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+              ),
               onPressed: _toggleMute,
             ),
           IconButton(
@@ -1986,118 +2064,168 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       ),
       body: SafeArea(
         child: Center(
-          child: _hasError
-              ? Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 54),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage ?? 'Unable to play video',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                )
-              : !_isInitialized || controller == null
-                  ? const Column(
+          child:
+              _hasError
+                  ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: Colors.white),
-                        SizedBox(height: 16),
-                        Text('Buffering video...', style: TextStyle(color: Colors.white70)),
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Colors.redAccent,
+                          size: 54,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage ?? 'Unable to play video',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
                       ],
-                    )
+                    ),
+                  )
+                  : !_isInitialized || controller == null
+                  ? const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Colors.white),
+                      SizedBox(height: 16),
+                      Text(
+                        'Buffering video...',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  )
                   : GestureDetector(
-                      onTap: _toggleControls,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AspectRatio(
-                            aspectRatio: controller.value.aspectRatio,
-                            child: VideoPlayer(controller),
+                    onTap: _toggleControls,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: controller.value.aspectRatio,
+                          child: VideoPlayer(controller),
+                        ),
+
+                        // Play/Pause Overlay Button
+                        if (_showControls)
+                          AnimatedOpacity(
+                            opacity: _showControls ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 200),
+                            child: Container(
+                              width: 68,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white30,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  controller.value.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 38,
+                                ),
+                                onPressed: _togglePlayPause,
+                              ),
+                            ),
                           ),
 
-                          // Play/Pause Overlay Button
-                          if (_showControls)
-                            AnimatedOpacity(
-                              opacity: _showControls ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 200),
-                              child: Container(
-                                width: 68,
-                                height: 68,
-                                decoration: BoxDecoration(
-                                  color: Colors.black54,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white30, width: 1.5),
-                                ),
-                                child: IconButton(
-                                  icon: Icon(
-                                    controller.value.isPlaying
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                    color: Colors.white,
-                                    size: 38,
+                        // Bottom Progress & Timestamp Controls
+                        if (_showControls)
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              color: Colors.black87,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 6,
+                                      ),
+                                      overlayShape:
+                                          const RoundSliderOverlayShape(
+                                            overlayRadius: 14,
+                                          ),
+                                      activeTrackColor: AppColors.primary,
+                                      inactiveTrackColor: Colors.white24,
+                                      thumbColor: Colors.white,
+                                    ),
+                                    child: Slider(
+                                      value:
+                                          controller
+                                              .value
+                                              .position
+                                              .inMilliseconds
+                                              .clamp(
+                                                0,
+                                                controller
+                                                    .value
+                                                    .duration
+                                                    .inMilliseconds,
+                                              )
+                                              .toDouble(),
+                                      min: 0,
+                                      max:
+                                          controller
+                                              .value
+                                              .duration
+                                              .inMilliseconds
+                                              .toDouble(),
+                                      onChanged: (val) {
+                                        controller.seekTo(
+                                          Duration(milliseconds: val.toInt()),
+                                        );
+                                      },
+                                    ),
                                   ),
-                                  onPressed: _togglePlayPause,
-                                ),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        _formatDuration(
+                                          controller.value.position,
+                                        ),
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        _formatDuration(
+                                          controller.value.duration,
+                                        ),
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-
-                          // Bottom Progress & Timestamp Controls
-                          if (_showControls)
-                            Positioned(
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                color: Colors.black87,
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SliderTheme(
-                                      data: SliderTheme.of(context).copyWith(
-                                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                                        activeTrackColor: AppColors.primary,
-                                        inactiveTrackColor: Colors.white24,
-                                        thumbColor: Colors.white,
-                                      ),
-                                      child: Slider(
-                                        value: controller.value.position.inMilliseconds
-                                            .clamp(0, controller.value.duration.inMilliseconds)
-                                            .toDouble(),
-                                        min: 0,
-                                        max: controller.value.duration.inMilliseconds.toDouble(),
-                                        onChanged: (val) {
-                                          controller.seekTo(Duration(milliseconds: val.toInt()));
-                                        },
-                                      ),
-                                    ),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          _formatDuration(controller.value.position),
-                                          style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                        ),
-                                        Text(
-                                          _formatDuration(controller.value.duration),
-                                          style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
+                  ),
         ),
       ),
     );
@@ -2116,21 +2244,25 @@ class _BookingProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final raw = (booking.rawStatus ?? '').toUpperCase();
-    final isPaid = booking.status == BookingStatus.paid ||
+    final isPaid =
+        booking.status == BookingStatus.paid ||
         (booking.paymentStatus ?? '').toUpperCase() == 'PAID' ||
         raw == 'PAID' ||
         raw == 'PAYMENT_PAID';
-    final isAwaitingPayment = !isPaid &&
+    final isAwaitingPayment =
+        !isPaid &&
         (raw == 'PAYMENT_PENDING' ||
             raw == 'AWAITING_PAYMENT' ||
             (booking.status == BookingStatus.completed &&
                 raw != 'COMPLETED' &&
                 (booking.paymentStatus ?? '').toUpperCase() != 'PAID'));
-    final workStarted = booking.jobStartedAt != null ||
+    final workStarted =
+        booking.jobStartedAt != null ||
         booking.status == BookingStatus.inProgress ||
         isAwaitingPayment ||
         isPaid;
-    final arrivedOrLater = booking.status == BookingStatus.arrived ||
+    final arrivedOrLater =
+        booking.status == BookingStatus.arrived ||
         booking.status == BookingStatus.inProgress ||
         isAwaitingPayment ||
         isPaid;
@@ -2138,19 +2270,23 @@ class _BookingProgressCard extends StatelessWidget {
     final steps = [
       _ProgressStep(
         title: 'Booking Placed',
-        subtitle: booking.createdAt != null
-            ? DateFormat('d MMM, h:mm a').format(booking.createdAt!)
-            : 'Order received',
+        subtitle:
+            booking.createdAt != null
+                ? DateFormat('d MMM, h:mm a').format(booking.createdAt!)
+                : 'Order received',
         isDone: booking.createdAt != null,
-        isActive: booking.status == BookingStatus.draft ||
+        isActive:
+            booking.status == BookingStatus.draft ||
             booking.status == BookingStatus.searching,
       ),
       _ProgressStep(
         title: 'Professional Assigned',
-        subtitle: booking.workerName != null
-            ? '${booking.workerName} assigned'
-            : 'Matching nearby technician',
-        isDone: booking.workerName != null &&
+        subtitle:
+            booking.workerName != null
+                ? '${booking.workerName} assigned'
+                : 'Matching nearby technician',
+        isDone:
+            booking.workerName != null &&
             booking.status != BookingStatus.searching &&
             booking.status != BookingStatus.draft,
         isActive: booking.status == BookingStatus.accepted,
@@ -2163,23 +2299,30 @@ class _BookingProgressCard extends StatelessWidget {
       ),
       _ProgressStep(
         title: 'Work In Progress',
-        subtitle: booking.jobStartedAt != null
-            ? DateFormat('h:mm a').format(booking.jobStartedAt!)
-            : 'Service execution',
+        subtitle:
+            booking.jobStartedAt != null
+                ? DateFormat('h:mm a').format(booking.jobStartedAt!)
+                : 'Service execution',
         isDone: workStarted,
         isActive: booking.status == BookingStatus.inProgress,
       ),
       _ProgressStep(
-        title: isPaid
-            ? 'Paid & Complete'
-            : (isAwaitingPayment ? 'Awaiting Payment' : 'Completed & Invoiced'),
-        subtitle: isPaid
-            ? (booking.jobCompletedAt != null
-                ? DateFormat('d MMM, h:mm a').format(booking.jobCompletedAt!)
-                : 'Payment received')
-            : (isAwaitingPayment
-                ? 'Invoice ready — pay to finish'
-                : 'Not finished yet'),
+        title:
+            isPaid
+                ? 'Paid & Complete'
+                : (isAwaitingPayment
+                    ? 'Awaiting Payment'
+                    : 'Completed & Invoiced'),
+        subtitle:
+            isPaid
+                ? (booking.jobCompletedAt != null
+                    ? DateFormat(
+                      'd MMM, h:mm a',
+                    ).format(booking.jobCompletedAt!)
+                    : 'Payment received')
+                : (isAwaitingPayment
+                    ? 'Invoice ready — pay to finish'
+                    : 'Not finished yet'),
         // Only tick when customer actually paid — not on PAYMENT_PENDING.
         isDone: isPaid,
         isActive: isAwaitingPayment,
@@ -2207,7 +2350,11 @@ class _BookingProgressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.linear_scale_rounded, size: 20, color: AppColors.primary),
+              const Icon(
+                Icons.linear_scale_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Booking Timeline',
@@ -2220,10 +2367,7 @@ class _BookingProgressCard extends StatelessWidget {
           const SizedBox(height: 16),
 
           for (int i = 0; i < steps.length; i++) ...[
-            _ProgressStepRow(
-              step: steps[i],
-              isLast: i == steps.length - 1,
-            ),
+            _ProgressStepRow(step: steps[i], isLast: i == steps.length - 1),
           ],
         ],
       ),
@@ -2246,10 +2390,7 @@ class _ProgressStep {
 }
 
 class _ProgressStepRow extends StatelessWidget {
-  const _ProgressStepRow({
-    required this.step,
-    required this.isLast,
-  });
+  const _ProgressStepRow({required this.step, required this.isLast});
 
   final _ProgressStep step;
   final bool isLast;
@@ -2257,9 +2398,10 @@ class _ProgressStepRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final indicatorColor = step.isDone
-        ? const Color(0xFF059669)
-        : step.isActive
+    final indicatorColor =
+        step.isDone
+            ? const Color(0xFF059669)
+            : step.isActive
             ? AppColors.primary
             : theme.hintColor.withValues(alpha: 0.3);
 
@@ -2273,9 +2415,10 @@ class _ProgressStepRow extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: step.isDone
-                      ? const Color(0xFF059669)
-                      : step.isActive
+                  color:
+                      step.isDone
+                          ? const Color(0xFF059669)
+                          : step.isActive
                           ? AppColors.primary.withValues(alpha: 0.15)
                           : Colors.transparent,
                   shape: BoxShape.circle,
@@ -2285,17 +2428,22 @@ class _ProgressStepRow extends StatelessWidget {
                   ),
                 ),
                 child: Center(
-                  child: step.isDone
-                      ? const Icon(Icons.check, size: 14, color: Colors.white)
-                      : step.isActive
+                  child:
+                      step.isDone
+                          ? const Icon(
+                            Icons.check,
+                            size: 14,
+                            color: Colors.white,
+                          )
+                          : step.isActive
                           ? Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                            )
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          )
                           : null,
                 ),
               ),
@@ -2303,9 +2451,10 @@ class _ProgressStepRow extends StatelessWidget {
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: step.isDone
-                        ? const Color(0xFF059669).withValues(alpha: 0.4)
-                        : theme.dividerColor.withValues(alpha: 0.4),
+                    color:
+                        step.isDone
+                            ? const Color(0xFF059669).withValues(alpha: 0.4)
+                            : theme.dividerColor.withValues(alpha: 0.4),
                     margin: const EdgeInsets.symmetric(vertical: 2),
                   ),
                 ),
@@ -2321,12 +2470,12 @@ class _ProgressStepRow extends StatelessWidget {
                   Text(
                     step.title,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: step.isDone || step.isActive
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: step.isDone || step.isActive
-                          ? null
-                          : theme.hintColor,
+                      fontWeight:
+                          step.isDone || step.isActive
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                      color:
+                          step.isDone || step.isActive ? null : theme.hintColor,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2351,10 +2500,7 @@ class _ProgressStepRow extends StatelessWidget {
 // 7. Payment Summary & Pricing
 // ---------------------------------------------------------------------------
 class _PaymentSummaryCard extends StatelessWidget {
-  const _PaymentSummaryCard({
-    required this.booking,
-    this.isWorker = false,
-  });
+  const _PaymentSummaryCard({required this.booking, this.isWorker = false});
 
   final Booking booking;
   final bool isWorker;
@@ -2362,12 +2508,15 @@ class _PaymentSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isPaid = booking.status == BookingStatus.paid ||
+    final isPaid =
+        booking.status == BookingStatus.paid ||
         (booking.paymentStatus != null &&
             booking.paymentStatus!.toUpperCase() == 'PAID');
     final platform = booking.platformFee ?? booking.invoice?.platformFee ?? 0.0;
     final customerTotal =
-        booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice;
+        booking.totalAmount ??
+        booking.invoice?.totalAmount ??
+        booking.totalPrice;
     final workerTakeHome = booking.workerPayout;
 
     return Container(
@@ -2391,7 +2540,11 @@ class _PaymentSummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.receipt_long_rounded, size: 20, color: AppColors.primary),
+              const Icon(
+                Icons.receipt_long_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2406,18 +2559,29 @@ class _PaymentSummaryCard extends StatelessWidget {
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: isPaid ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+                    color:
+                        isPaid
+                            ? const Color(0xFFECFDF5)
+                            : const Color(0xFFFEF3C7),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isPaid ? Icons.check_circle_rounded : Icons.pending_rounded,
+                        isPaid
+                            ? Icons.check_circle_rounded
+                            : Icons.pending_rounded,
                         size: 12,
-                        color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                        color:
+                            isPaid
+                                ? const Color(0xFF059669)
+                                : const Color(0xFFD97706),
                       ),
                       const SizedBox(width: 4),
                       Flexible(
@@ -2428,7 +2592,10 @@ class _PaymentSummaryCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                            color:
+                                isPaid
+                                    ? const Color(0xFF059669)
+                                    : const Color(0xFFD97706),
                           ),
                         ),
                       ),
@@ -2442,19 +2609,21 @@ class _PaymentSummaryCard extends StatelessWidget {
 
           _ChargeRow(
             label: 'Base Service Fee',
-            amount: booking.workerEstimation != null &&
-                    booking.workerEstimation!.lockedBaseFee > 0
-                ? booking.workerEstimation!.lockedBaseFee
-                : (booking.invoice?.baseServiceFee ??
-                    booking.baseServiceFee ??
-                    booking.estimatedPrice),
+            amount:
+                booking.workerEstimation != null &&
+                        booking.workerEstimation!.lockedBaseFee > 0
+                    ? booking.workerEstimation!.lockedBaseFee
+                    : (booking.invoice?.baseServiceFee ??
+                        booking.baseServiceFee ??
+                        booking.estimatedPrice),
           ),
           if ((booking.extraPartsTotal ?? 0) > 0 ||
               (booking.workerEstimation?.partsEstimate ?? 0) > 0 ||
               booking.addOns.isNotEmpty) ...[
             _ChargeRow(
               label: 'Extra Parts & Materials',
-              amount: booking.workerEstimation?.partsEstimate ??
+              amount:
+                  booking.workerEstimation?.partsEstimate ??
                   booking.extraPartsTotal ??
                   booking.addOns.fold<double>(
                     0.0,
@@ -2469,11 +2638,15 @@ class _PaymentSummaryCard extends StatelessWidget {
                   children: [
                     Text(
                       '• ${part.title} (x${part.quantity})',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.hintColor,
+                      ),
                     ),
                     Text(
                       '₹${(part.price * part.quantity).toStringAsFixed(0)}',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.hintColor,
+                      ),
                     ),
                   ],
                 ),
@@ -2491,9 +2664,10 @@ class _PaymentSummaryCard extends StatelessWidget {
             ),
           if (platform > 0)
             _ChargeRow(
-              label: isWorker
-                  ? 'Platform fee (deducted)'
-                  : 'Platform & Safety Fee',
+              label:
+                  isWorker
+                      ? 'Platform fee (deducted)'
+                      : 'Platform & Safety Fee',
               amount: isWorker ? -platform : platform,
             ),
 
@@ -2510,22 +2684,30 @@ class _PaymentSummaryCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'Customer paid ₹${customerTotal.toStringAsFixed(0)} · platform fee ₹${platform.toStringAsFixed(0)} deducted',
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor, fontSize: 11),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.hintColor,
+                fontSize: 11,
+              ),
             ),
           ],
 
-          if (booking.paymentMethod != null && booking.paymentMethod!.isNotEmpty) ...[
+          if (booking.paymentMethod != null &&
+              booking.paymentMethod!.isNotEmpty) ...[
             const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   'Payment Method',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.hintColor,
+                  ),
                 ),
                 Text(
                   booking.paymentMethod!,
-                  style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -2571,9 +2753,10 @@ class _ChargeRow extends StatelessWidget {
                 ? '-₹${value.abs().toStringAsFixed(0)}'
                 : '₹${value.toStringAsFixed(0)}',
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: emphasize
-                  ? AppColors.primary
-                  : (isDeduction ? const Color(0xFFDC2626) : null),
+              color:
+                  emphasize
+                      ? AppColors.primary
+                      : (isDeduction ? const Color(0xFFDC2626) : null),
               fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
               fontSize: emphasize ? 17 : 13,
             ),
@@ -2613,7 +2796,10 @@ class _StatusActionsState extends State<_StatusActions> {
   Future<void> _handlePayment() async {
     final booking = _booking;
     final currentUser = context.read<AppSessionCubit>().currentUser;
-    final amount = booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice;
+    final amount =
+        booking.totalAmount ??
+        booking.invoice?.totalAmount ??
+        booking.totalPrice;
     final raw = (booking.rawStatus ?? '').toUpperCase();
     const inProgressMsg =
         'The service is currently in progress. You cannot make a payment while the worker is actively working. Please wait until the worker completes the service.';
@@ -2622,17 +2808,20 @@ class _StatusActionsState extends State<_StatusActions> {
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Payment unavailable'),
-          content: const Text(inProgressMsg),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
+        builder:
+            (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text('Payment unavailable'),
+              content: const Text(inProgressMsg),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
             ),
-          ],
-        ),
       );
       return;
     }
@@ -2661,7 +2850,10 @@ class _StatusActionsState extends State<_StatusActions> {
         widget.onRefresh?.call();
         context.goRefreshing(RouteNames.customerRatingPath(booking.id));
       } else {
-        ToastUtils.showToast(context: context, message: 'Payment verification failed');
+        ToastUtils.showToast(
+          context: context,
+          message: 'Payment verification failed',
+        );
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -2671,17 +2863,20 @@ class _StatusActionsState extends State<_StatusActions> {
           msg.toLowerCase().contains('actively working')) {
         await showDialog<void>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Payment unavailable'),
-            content: Text(msg),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('OK'),
+          builder:
+              (ctx) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: const Text('Payment unavailable'),
+                content: Text(msg),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
               ),
-            ],
-          ),
         );
       } else {
         ToastUtils.showError(context: context, message: msg);
@@ -2695,79 +2890,89 @@ class _StatusActionsState extends State<_StatusActions> {
   }
 
   void _showEditBookingDialog(BuildContext context) {
-    final descCtrl = TextEditingController(text: widget.booking.problemDescription ?? '');
+    final descCtrl = TextEditingController(
+      text: widget.booking.problemDescription ?? '',
+    );
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Edit Problem Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Updating your problem description helps professionals understand the job requirements accurately.',
-                style: TextStyle(fontSize: 13, color: Colors.black54),
+      builder:
+          (dialogCtx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text('Edit Problem Details'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Updating your problem description helps professionals understand the job requirements accurately.',
+                    style: TextStyle(fontSize: 13, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Problem Description',
+                      border: OutlineInputBorder(),
+                      hintText: 'Describe the issue...',
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: descCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Problem Description',
-                  border: OutlineInputBorder(),
-                  hintText: 'Describe the issue...',
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(dialogCtx);
+                  try {
+                    await BookingsApiRepository().updateBooking(
+                      bookingId: widget.booking.id,
+                      problemDescription: descCtrl.text.trim(),
+                    );
+                    if (context.mounted) {
+                      ToastUtils.showToast(
+                        context: context,
+                        message: 'Booking details updated successfully!',
+                      );
+                      widget.onRefresh?.call();
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ToastUtils.showToast(
+                        context: context,
+                        message: 'Failed to update: $e',
+                      );
+                    }
+                  }
+                },
+                child: const Text('Save & Update'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(dialogCtx);
-              try {
-                await BookingsApiRepository().updateBooking(
-                  bookingId: widget.booking.id,
-                  problemDescription: descCtrl.text.trim(),
-                );
-                if (context.mounted) {
-                  ToastUtils.showToast(
-                    context: context,
-                    message: 'Booking details updated successfully!',
-                  );
-                  widget.onRefresh?.call();
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ToastUtils.showToast(
-                    context: context,
-                    message: 'Failed to update: $e',
-                  );
-                }
-              }
-            },
-            child: const Text('Save & Update'),
-          ),
-        ],
-      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final booking = _booking;
-    final role = context.watch<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
+    final role =
+        context.watch<AppSessionCubit>().currentUser?.role ?? UserRole.customer;
     final isWorker = role == UserRole.worker;
-    final isPaid = booking.status == BookingStatus.paid ||
+    final isPaid =
+        booking.status == BookingStatus.paid ||
         (booking.paymentStatus != null &&
             booking.paymentStatus!.toUpperCase() == 'PAID');
-    final amount = booking.totalAmount ?? booking.invoice?.totalAmount ?? booking.totalPrice;
+    final amount =
+        booking.totalAmount ??
+        booking.invoice?.totalAmount ??
+        booking.totalPrice;
 
     switch (booking.status) {
       case BookingStatus.cancelled:
@@ -2781,7 +2986,11 @@ class _StatusActionsState extends State<_StatusActions> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 22),
+              const Icon(
+                Icons.cancel_rounded,
+                color: Color(0xFFDC2626),
+                size: 22,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -2833,27 +3042,30 @@ class _StatusActionsState extends State<_StatusActions> {
               onPressed: () async {
                 final confirm = await showDialog<bool>(
                   context: context,
-                  builder: (ctx) => AlertDialog(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    title: const Text('Cancel Booking?'),
-                    content: const Text(
-                      'Are you sure you want to cancel this booking request?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('No, keep it'),
-                      ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.error,
-                          foregroundColor: Colors.white,
+                  builder:
+                      (ctx) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Yes, cancel'),
+                        title: const Text('Cancel Booking?'),
+                        content: const Text(
+                          'Are you sure you want to cancel this booking request?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('No, keep it'),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.error,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Yes, cancel'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
                 );
                 if (confirm == true && context.mounted) {
                   await BookingsApiRepository().cancel(booking.id);
@@ -2886,9 +3098,10 @@ class _StatusActionsState extends State<_StatusActions> {
             else if (booking.workerHasStartedNavigation)
               PrimaryButton(
                 label: 'Track Worker Live',
-                onPressed: () => context.push(
-                  '${RouteNames.customerTracking}?bookingId=${booking.id}',
-                ),
+                onPressed:
+                    () => context.push(
+                      '${RouteNames.customerTracking}?bookingId=${booking.id}',
+                    ),
               )
             else
               Container(
@@ -2967,18 +3180,20 @@ class _StatusActionsState extends State<_StatusActions> {
               ),
               PrimaryButton(
                 label: 'Review Rough Estimation',
-                onPressed: () => context.push(
-                  '${RouteNames.customerEstimationReview}?bookingId=${booking.id}',
-                ),
+                onPressed:
+                    () => context.push(
+                      '${RouteNames.customerEstimationReview}?bookingId=${booking.id}',
+                    ),
               ),
               const SizedBox(height: 12),
             ],
             if (isWorker && !hasEstimation)
               PrimaryButton(
                 label: 'Create Rough Estimation',
-                onPressed: () => context.push(
-                  '${RouteNames.workerPriceEstimation}?bookingId=${booking.id}',
-                ),
+                onPressed:
+                    () => context.push(
+                      '${RouteNames.workerPriceEstimation}?bookingId=${booking.id}',
+                    ),
               )
             else if (isWorker && hasEstimation)
               Container(
@@ -3001,17 +3216,19 @@ class _StatusActionsState extends State<_StatusActions> {
             else if (!isWorker && booking.workerHasStartedNavigation)
               SecondaryButton(
                 label: 'Track Worker Live',
-                onPressed: () => context.push(
-                  '${RouteNames.customerTracking}?bookingId=${booking.id}',
-                ),
+                onPressed:
+                    () => context.push(
+                      '${RouteNames.customerTracking}?bookingId=${booking.id}',
+                    ),
               ),
             if (isWorker) ...[
               const SizedBox(height: 12),
               SecondaryButton(
                 label: 'View Job Location on Map',
-                onPressed: () => context.push(
-                  '${RouteNames.workerNavigation}?bookingId=${booking.id}',
-                ),
+                onPressed:
+                    () => context.push(
+                      '${RouteNames.workerNavigation}?bookingId=${booking.id}',
+                    ),
               ),
             ],
           ],
@@ -3056,7 +3273,10 @@ class _StatusActionsState extends State<_StatusActions> {
               const SizedBox(height: 12),
               SecondaryButton(
                 label: 'View Navigation Map',
-                onPressed: () => context.push('${RouteNames.workerNavigation}?bookingId=${booking.id}'),
+                onPressed:
+                    () => context.push(
+                      '${RouteNames.workerNavigation}?bookingId=${booking.id}',
+                    ),
               ),
             ],
           ],
@@ -3080,7 +3300,9 @@ class _StatusActionsState extends State<_StatusActions> {
                       ),
                     );
                   } else {
-                    context.goRefreshing(RouteNames.customerRatingPath(booking.id));
+                    context.goRefreshing(
+                      RouteNames.customerRatingPath(booking.id),
+                    );
                   }
                 },
               ),
@@ -3108,21 +3330,26 @@ class _StatusActionsState extends State<_StatusActions> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             PrimaryButton(
-              label: isPaid
-                  ? 'View Invoice & Receipt'
-                  : 'Pay Now (₹${amount.toInt()})',
+              label:
+                  isPaid
+                      ? 'View Invoice & Receipt'
+                      : 'Pay Now (₹${amount.toInt()})',
               loading: _isPaying,
-              onPressed: _isPaying
-                  ? null
-                  : () {
-                      if (!isPaid) {
-                        _handlePayment();
-                        return;
-                      }
-                      context.push(
-                        RouteNames.customerInvoice.replaceFirst(':id', booking.id),
-                      );
-                    },
+              onPressed:
+                  _isPaying
+                      ? null
+                      : () {
+                        if (!isPaid) {
+                          _handlePayment();
+                          return;
+                        }
+                        context.push(
+                          RouteNames.customerInvoice.replaceFirst(
+                            ':id',
+                            booking.id,
+                          ),
+                        );
+                      },
             ),
           ],
         );
@@ -3189,8 +3416,12 @@ _StatusBadgeConfig _getStatusBadge(
   final raw = (rawStatus ?? '').toUpperCase();
   final pay = (paymentStatus ?? '').toUpperCase();
   final isPaid =
-      status == BookingStatus.paid || pay == 'PAID' || raw == 'PAID' || raw == 'PAYMENT_PAID';
-  final isAwaitingPayment = !isPaid &&
+      status == BookingStatus.paid ||
+      pay == 'PAID' ||
+      raw == 'PAID' ||
+      raw == 'PAYMENT_PAID';
+  final isAwaitingPayment =
+      !isPaid &&
       (raw == 'PAYMENT_PENDING' ||
           raw == 'AWAITING_PAYMENT' ||
           (status == BookingStatus.completed &&
@@ -3281,7 +3512,8 @@ Color _categoryColor(String? category) {
   final c = category.toLowerCase();
   if (c.contains('elect')) return const Color(0xFFEAB308);
   if (c.contains('plumb')) return const Color(0xFF0284C7);
-  if (c.contains('tech') || c.contains('appliance')) return const Color(0xFF6366F1);
+  if (c.contains('tech') || c.contains('appliance'))
+    return const Color(0xFF6366F1);
   if (c.contains('care') || c.contains('nurse')) return const Color(0xFFEC4899);
   if (c.contains('clean')) return const Color(0xFF10B981);
   if (c.contains('paint')) return const Color(0xFF8B5CF6);

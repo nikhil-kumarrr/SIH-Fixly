@@ -385,15 +385,19 @@ class _WorkerDashboardPageState extends State<WorkerDashboardPage>
               children: [
                 Row(
                   children: [
-                    Text(
-                      isOnline ? 'ONLINE & ACTIVE' : 'YOU ARE OFFLINE',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                        letterSpacing: 0.4,
-                        color: isOnline
-                            ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                            : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                    Flexible(
+                      child: Text(
+                        isOnline ? 'ONLINE & ACTIVE' : 'YOU ARE OFFLINE',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                          letterSpacing: 0.4,
+                          color: isOnline
+                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                              : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),

@@ -876,9 +876,11 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
                       child: const Icon(Icons.check, size: 12, color: Colors.white),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'The expert is trained to (Included)',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    const Expanded(
+                      child: Text(
+                        'The expert is trained to (Included)',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ],
                 ),
@@ -971,9 +973,11 @@ class _WorkerWorkProfilePageState extends State<WorkerWorkProfilePage> {
                       child: const Icon(Icons.close, size: 12, color: Colors.white),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'What is not included (Your Boundaries)',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    const Expanded(
+                      child: Text(
+                        'What is not included (Your Boundaries)',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ],
                 ),
