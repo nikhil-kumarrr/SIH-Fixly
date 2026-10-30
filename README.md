@@ -1,5 +1,19 @@
 # Fixly — Cooperative Gig Services Platform
 
+<div align="center">
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Flutter](https://img.shields.io/badge/Flutter-3.7+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Express](https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white)](https://expressjs.com)
+[![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-5+-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
+[![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white)](https://mongodb.com)
+[![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)](https://redis.io)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+</div>
+
 **SIH Problem Statement:** Cooperative Gig Services Platform for Household & Community Services  
 **Repo:** `SIH-Fixly` · **Stack:** Flutter · Node.js/Express · React (Vite) · Python ML · MongoDB · Redis
 
@@ -753,5 +767,4 @@ Then open:
 
 ## License
 
-ISC (backend `package.json`); clarify with team before public redistribution of the full monorepo.
-```
+This project is licensed under the [MIT License](LICENSE).

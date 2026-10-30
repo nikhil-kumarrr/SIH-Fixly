@@ -12,8 +12,12 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "description": "",
+  "description": "Fixly Core REST & WebSocket Backend API",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nikhil-kumarrr/SIH-Fixly.git"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@langchain/core": "^1.2.9",
